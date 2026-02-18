@@ -82,12 +82,30 @@ curl -s http://127.0.0.1:18890/health
 - routing: `current` + `aliases` + `fallbacks`
 - если API формат провайдера несовместим, ClawForge возвращает честную diagnostic-ошибку.
 
-## OpenClaw CLI compatibility layer
+## OpenClaw compatibility
 
-Теперь есть OpenClaw-подобный dispatcher верхнего уровня.
+В Stage 10 ClawForge получил практичный parity CLI для ключевых OpenClaw-сценариев.
 
-- Реально работает (implemented/partial): `status`, `health`, `sessions`, `cron`, `tools`, `models`, `pairing`, `doctor`, `config get/set`
-- Остальные OpenClaw-ветки возвращают совместимый stub (`not implemented yet`) и ссылку на `docs/CLI_PARITY.md`.
+### 1:1 или почти 1:1
+- `status`, `health`, `doctor`, `sessions`
+- `cron list|add|rm|run|validate`
+- `tools list|call`
+- `models list|status|set|aliases|fallbacks|probe|set-image`
+- `image-fallbacks list|add|remove|clear`
+- `browser status|open|snapshot` (snapshot пока baseline/diagnostic)
+- `config get/set` (расширено покрытие ключей)
+- `logs tail`, `system event`, `pairing list|approve`
+
+### Migration guide (OpenClaw -> ClawForge)
+- `openclaw browser status` -> `clawforge browser status`
+- `openclaw browser open <url>` -> `clawforge browser open <url>`
+- `openclaw cron add --json ...` -> `clawforge cron add --json ...`
+- `openclaw tools call <name> --json ...` -> `clawforge tools call <name> --json ...`
+- `openclaw models probe` -> `clawforge models probe`
+- `openclaw models set-image <model>` -> `clawforge models set-image <model>`
+- `openclaw image-fallbacks ...` -> `clawforge image-fallbacks ...`
+
+Полная матрица (`implemented` / `partial` / `stub` / `impossible-now`) — в `docs/CLI_PARITY.md`.
 
 Язык CLI:
 

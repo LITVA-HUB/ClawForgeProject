@@ -1,38 +1,93 @@
-# CLI Parity Matrix (OpenClaw -> ClawForge Stage 9)
+# CLI Parity Matrix (OpenClaw docs audit -> ClawForge Stage 10)
+
+Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
 ## Legend
-- **implemented**: usable command in ClawForge now
-- **partial**: command exists with reduced behavior
-- **stub**: compatibility dispatcher exists, returns `not implemented yet` with this doc reference
+- **implemented** — command works in ClawForge CLI now
+- **partial** — command exists, but reduced behavior / baseline only
+- **stub** — compatibility branch exists and returns explicit `not implemented yet`
+- **impossible-now** — not realistically implementable in current ClawForge scope (requires OpenClaw-native infra/UI/ecosystem)
 
-## Top-level parity
+## Top-level parity (from OpenClaw CLI docs)
 
-| OpenClaw command | ClawForge | Status | Notes |
+| OpenClaw top-level | Key subcommands in OpenClaw docs | ClawForge status | ClawForge mapping / note |
 |---|---|---|---|
-| `status` | `clawforge status` | implemented | API + local fallback |
-| `health` | `clawforge health` | implemented | checks `/health` |
-| `sessions` | `clawforge sessions` | implemented | API + local fallback |
-| `cron` | `clawforge cron list` | partial | only `list` in CLI (API has more) |
-| `tools` | `clawforge tools list` | partial | only list |
-| `models` | `clawforge models ...` | implemented | list/status/set + aliases/fallbacks |
-| `pairing` | `clawforge pairing list|approve` | implemented | baseline |
-| `doctor` | `clawforge --doctor` or `clawforge doctor` | implemented | baseline diagnostics |
-| `config` | `clawforge config get/set` | partial | baseline keys only |
-| `gateway` | compat stub | stub | planned |
-| `browser` | compat stub | stub | HTTP endpoints exist, CLI branch not implemented |
-| `setup`, `onboard`, `configure`, `dashboard`, `reset`, `uninstall`, `update`, `message`, `agent`, `agents`, `acp`, `logs`, `system`, `memory`, `nodes`, `devices`, `node`, `approvals`, `sandbox`, `dns`, `docs`, `hooks`, `webhooks`, `plugins`, `channels`, `security`, `skills`, `tui` | compat stub | stub | clean diagnostic instead of hard unknown |
+| `status` | `status` | implemented | `clawforge status` |
+| `health` | `health` | implemented | `clawforge health` |
+| `doctor` | `doctor` | implemented | `clawforge doctor` / `--doctor` |
+| `sessions` | list/show/ops | partial | `clawforge sessions` list baseline |
+| `cron` | list/add/rm/run/validate | implemented | all baseline ops in CLI + local fallback |
+| `tools` | list/call | implemented | `tools list`, `tools call <name> --json <payload>` |
+| `browser` | status/open/snapshot/... | partial | `status|open|snapshot` implemented; snapshot still diagnostic baseline |
+| `config` | get/set | partial | expanded key coverage, not full OpenClaw config surface |
+| `models` | list/status/set/aliases/fallbacks/probe | implemented | plus `set-image` |
+| `image-fallbacks` | list/add/remove/clear | implemented | added as baseline config ops |
+| `logs` | tail/... | partial | `logs tail [lines]` (audit file tail) |
+| `system` | event/... | partial | `system event <text>` baseline enqueue path |
+| `pairing` | list/approve/... | partial | `list`, `approve` |
+| `gateway` | status/start/stop/restart/... | stub | not mapped yet |
+| `message` | send/... | stub | not mapped yet |
+| `agent` | manage/ops | stub | not mapped yet |
+| `agents` | manage/ops | stub | not mapped yet |
+| `acp` | protocol tooling | impossible-now | requires ACP ecosystem parity |
+| `approvals` | approvals workflow | stub | not mapped yet |
+| `channels` | channel providers mgmt | stub | not mapped yet |
+| `dashboard` | dashboard/ui | impossible-now | OpenClaw UI stack |
+| `devices` | devices control | stub | not mapped yet |
+| `directory` | identity/directory | impossible-now | no directory backend in ClawForge |
+| `dns` | dns ops | stub | not mapped yet |
+| `docs` | docs tooling | stub | not mapped yet |
+| `hooks` | hooks ops | stub | not mapped yet |
+| `memory` | memory tooling | stub | not mapped yet |
+| `node` | node mgmt | stub | not mapped yet |
+| `nodes` | nodes mgmt | stub | not mapped yet |
+| `onboard` | onboarding flow | stub | not mapped yet |
+| `plugins` | plugin ops | stub | not mapped yet |
+| `reset` | reset ops | stub | not mapped yet |
+| `sandbox` | sandbox ops | stub | not mapped yet |
+| `security` | security policies | stub | not mapped yet |
+| `setup` | setup flow | stub | not mapped yet |
+| `skills` | skills mgmt | stub | not mapped yet |
+| `tui` | terminal UI | impossible-now | no TUI subsystem |
+| `uninstall` | uninstall flow | impossible-now | external installer/runtime concern |
+| `update` | self-update | impossible-now | no packaged updater pipeline |
+| `voicecall` | voice call controls | impossible-now | no voice-call runtime |
+| `webhooks` | webhooks ops | stub | not mapped yet |
+| `configure` | setup/config assistant | stub | not mapped yet |
+| `dashboard` | UI | impossible-now | see above |
 
-## Models command parity
+## Key subcommand parity details
 
-| OpenClaw models subcommand | ClawForge | Status |
-|---|---|---|
-| `models list` | `models list` | implemented |
-| `models status` | `models status` | implemented |
-| `models set` | `models set <provider/model or alias>` | implemented |
-| `models aliases list/add/remove` | same | implemented |
-| `models fallbacks list/add/remove/clear` | same | implemented |
-| `models set-image`, `image-fallbacks`, `scan`, `auth ...` | n/a | stub (future) |
+### Browser
+- `browser status` — **implemented**
+- `browser open <url>` — **implemented**
+- `browser snapshot [urlHint]` — **partial** (currently diagnostic/baseline in backend)
 
-## Notes
-- Compatibility dispatcher intentionally catches many OpenClaw top-level commands and returns explicit stub text.
-- This avoids generic `unknown command` and makes migration friendlier.
+### Cron
+- `cron list` — **implemented**
+- `cron add --json '<payload>'` — **implemented**
+- `cron rm <id>` — **implemented**
+- `cron run <id>` — **implemented**
+- `cron validate --json '<payload>'` — **implemented**
+
+### Tools
+- `tools list` — **implemented**
+- `tools call <name> --json '<payload>'` — **implemented**
+
+### Config get/set (covered keys)
+- **implemented**: `gateway.auth.mode`, `gateway.auth.tokenEnv`, `api.dmScope`, `telegram.dmPolicy`, `models.routing.current`, `models.routing.image`
+- **partial**: objects/arrays (`models.routing.aliases`, `models.routing.fallbacks`, `models.routing.imageFallbacks`) can be read, but set via dedicated commands (`models aliases...`, `models fallbacks...`, `image-fallbacks...`)
+
+### Models
+- `models list|status|set|aliases|fallbacks` — **implemented**
+- `models probe` — **implemented** (no token-spend baseline health)
+- `models set-image` — **implemented** (config op baseline)
+- `image-fallbacks list|add|remove|clear` — **implemented**
+
+### Logs/System
+- `logs tail [lines]` — **implemented** (audit file tail)
+- `system event <text>` — **implemented** (API path when available, local fallback to main session system message)
+
+## Stage 10 summary
+- Focus for this sprint: deep practical parity on frequently-used operational CLI branches.
+- Where full OpenClaw feature equivalence is impossible now, ClawForge returns explicit baseline diagnostics instead of silent gaps.
