@@ -1,16 +1,17 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 12 gateway/security baseline.
+> Updated after Stage 13 onboarding wizard baseline.
 
 ## Practical parity matrix
 
-| Area | OpenClaw | NexaClaw (Stage 12) | Status | Notes |
+| Area | OpenClaw | NexaClaw (Stage 13) | Status | Notes |
 |---|---|---|---|---|
 | HTTP API `/health`, `/api/message`, `/api/status` | ✅ | ✅ | Closed | Stable local gateway |
 | Session store | ✅ | ✅ | Closed | File-backed sessions |
 | Tools registry + scoped policy | ✅ | ✅ | Closed | global/channel/peer policy |
 | Cron jobs (`every`, `at`, `cron`) | ✅ | ✅ | Closed (baseline) | CLI + API (`list/add/rm/run/validate`) |
 | CLI UX + doctor | ✅ | ✅ | Closed | RU/EN + compatibility dispatcher |
+| Setup/onboard/configure wizard | ✅ | ⚠️ | Partial (Stage 13 baseline) | bilingual terminal setup wizard + non-interactive mode |
 | Gateway control-plane (`gateway status/start/stop/restart/call`) | ✅ | ⚠️ | Partial (Stage 12 baseline) | local pid/log process management + config.get/apply/patch baseline |
 | Security audit (`security audit [--deep] [--fix]`) | ✅ | ⚠️ | Partial (Stage 12 baseline) | dmScope/auth/perms checks + safe fixes |
 | Multi-model providers + aliases + fallbacks | ✅ | ✅ | Closed (baseline) | openai/anthropic/openrouter/gemini/minimax |
@@ -32,5 +33,5 @@ Follow the Stage 12 critical path (see `docs/STAGE12_CRITICAL_GAPS.md`):
 1. Cron semantic parity (`status/edit/enable/disable/runs` + sessionTarget/delivery)
 2. Message command baseline (`message send` + strict target validation)
 3. Real OAuth device-code flow (`openai-codex` baseline)
-4. Browser backend upgrade (Playwright/CDP) for non-stub snapshot/actions)
+4. Browser backend upgrade (Playwright/CDP) for non-stub snapshot/actions
 5. Channels/agents/security deepening (`channels status/add/remove`, `agents list/add/delete`, deeper security audit)

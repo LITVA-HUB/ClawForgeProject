@@ -1,4 +1,4 @@
-# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 12)
+# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 13)
 
 Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
@@ -41,19 +41,19 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `memory` | memory tooling | stub | not mapped yet |
 | `node` | node mgmt | stub | not mapped yet |
 | `nodes` | nodes mgmt | stub | not mapped yet |
-| `onboard` | onboarding flow | stub | not mapped yet |
+| `onboard` | onboarding flow | partial | `onboard` maps to bilingual setup wizard baseline |
 | `plugins` | plugin ops | stub | not mapped yet |
 | `reset` | reset ops | stub | not mapped yet |
 | `sandbox` | sandbox ops | stub | not mapped yet |
 | `security` | security audit | partial | `security audit [--deep] [--fix]` baseline checks (dm scope, auth env, perms) |
-| `setup` | setup flow | stub | not mapped yet |
+| `setup` | setup flow | partial | terminal setup wizard (`--wizard` / `--non-interactive`) |
 | `skills` | skills mgmt | stub | not mapped yet |
 | `tui` | terminal UI | impossible-now | no TUI subsystem |
 | `uninstall` | uninstall flow | impossible-now | external installer/runtime concern |
 | `update` | self-update | impossible-now | no packaged updater pipeline |
 | `voicecall` | voice call controls | impossible-now | no voice-call runtime |
 | `webhooks` | webhooks ops | stub | not mapped yet |
-| `configure` | setup/config assistant | stub | not mapped yet |
+| `configure` | setup/config assistant | partial | `configure` maps to the same bilingual setup wizard baseline |
 | `dashboard` | UI | impossible-now | see above |
 
 ## Key subcommand parity details
@@ -99,8 +99,14 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - checks: DM scope risk, gateway auth env presence, config/state permissions
 - `security audit --fix` applies safe baseline remediations (dmScope + perms)
 
-## Stage 12 summary
-- Focus for this sprint: close P0 operational gaps (gateway control-plane + security audit baseline).
+### Setup/Onboard/Configure (Stage 13 wizard baseline)
+- `setup` / `onboard` / `configure` — **partial**
+- bilingual terminal wizard (RU/EN) with interactive menu
+- non-interactive mode via `--non-interactive` / `--yes`
+- safe defaults preset (dmScope + auth token env + telegram dmPolicy)
+
+## Stage 13 summary
+- Focus for this sprint: UX/onboarding lift (bilingual terminal setup wizard) on top of Stage 12 operational baseline.
 - Where full OpenClaw feature equivalence is impossible now, NexaClaw returns explicit baseline diagnostics instead of silent gaps.
 
 

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <csignal>
 #include <cctype>
 #include <chrono>
@@ -11,6 +12,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <unistd.h>
 
 #include <nlohmann/json.hpp>
 
@@ -166,10 +168,44 @@ bool hasFlag(const std::vector<std::string>& pos, const std::string& flag) {
   return false;
 }
 
+std::string trim(std::string value) {
+  auto notSpace = [](unsigned char ch) { return !std::isspace(ch); };
+  value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
+  value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
+  return value;
+}
+
+std::string promptLine(const std::string& label, const std::string& defaultValue = "") {
+  if (defaultValue.empty()) std::cout << label << ": ";
+  else std::cout << label << " [" << defaultValue << "]: ";
+  std::string in;
+  std::getline(std::cin, in);
+  in = trim(in);
+  if (in.empty()) return defaultValue;
+  return in;
+}
+
+bool ensureConfigFile(const std::string& configPath, std::string& error) {
+  const auto dst = std::filesystem::path(configPath);
+  if (std::filesystem::exists(dst)) return true;
+  const auto src = std::filesystem::path("config/config.example.json");
+  if (!std::filesystem::exists(src)) {
+    error = "Template not found: " + src.string();
+    return false;
+  }
+  std::error_code ec;
+  if (dst.has_parent_path()) std::filesystem::create_directories(dst.parent_path(), ec);
+  if (!std::filesystem::copy_file(src, dst, std::filesystem::copy_options::overwrite_existing, ec) || ec) {
+    error = "Cannot create config from template: " + dst.string();
+    return false;
+  }
+  return true;
+}
+
 void printHelp(const std::string& lang) {
   const bool ru = (lang == "ru");
   std::cout << (ru ? "NexaClaw CLI (alias: clawforge)\n\n" : "NexaClaw CLI (alias: clawforge)\n\n");
-  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw gateway status|start|stop|restart|call\n  nexaclaw security audit [--deep] [--fix]\n  nexaclaw cron list\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|paste-token|setup-token|use|remove\n";
+  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw setup|onboard|configure [--wizard|--non-interactive]\n  nexaclaw gateway status|start|stop|restart|call\n  nexaclaw security audit [--deep] [--fix]\n  nexaclaw cron list\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|paste-token|setup-token|use|remove\n";
   std::cout << (ru ? "\nСовместимость OpenClaw: неизвестные top-level ветки отдаются как compatibility stub вместо unknown (см. docs/CLI_PARITY.md).\n"
                    : "\nOpenClaw compatibility: unknown top-level branches return compatibility stubs instead of hard unknown (see docs/CLI_PARITY.md).\n");
 }
@@ -769,6 +805,111 @@ int runSecurityAudit(const std::string& configPath, const std::vector<std::strin
   return fails == 0 ? 0 : 1;
 }
 
+void applyRecommendedSetupDefaults(json& cfg) {
+  cfg["name"] = "nexaclaw";
+  cfg["gateway"]["auth"]["tokenEnv"] = "NEXACLAW_GATEWAY_TOKEN";
+  cfg["api"]["dmScope"] = "per-channel-peer";
+  cfg["telegram"]["dmPolicy"] = "pairing";
+}
+
+void printSetupSummary(const json& cfg, const std::string& lang) {
+  const bool ru = (lang == "ru");
+  const json gateway = (cfg.contains("gateway") && cfg["gateway"].is_object()) ? cfg["gateway"] : json::object();
+  const json auth = (gateway.contains("auth") && gateway["auth"].is_object()) ? gateway["auth"] : json::object();
+  const json api = (cfg.contains("api") && cfg["api"].is_object()) ? cfg["api"] : json::object();
+  const json telegram = (cfg.contains("telegram") && cfg["telegram"].is_object()) ? cfg["telegram"] : json::object();
+  const json model = (cfg.contains("model") && cfg["model"].is_object()) ? cfg["model"] : json::object();
+
+  std::cout << "\n" << (ru ? "Текущие параметры:" : "Current settings:") << "\n";
+  std::cout << "  - name: " << cfg.value("name", "nexaclaw") << "\n";
+  std::cout << "  - gateway.auth.mode: " << auth.value("mode", "off") << "\n";
+  std::cout << "  - gateway.auth.tokenEnv: " << auth.value("tokenEnv", "NEXACLAW_GATEWAY_TOKEN") << "\n";
+  std::cout << "  - api.dmScope: " << api.value("dmScope", "main") << "\n";
+  std::cout << "  - telegram.enabled: " << (telegram.value("enabled", false) ? "true" : "false") << "\n";
+  std::cout << "  - telegram.dmPolicy: " << telegram.value("dmPolicy", "open") << "\n";
+  std::cout << "  - model.apiKeyEnv: " << model.value("apiKeyEnv", "OPENAI_API_KEY") << "\n";
+}
+
+int runSetupWizard(const std::string& configPath, const std::string& lang, const std::vector<std::string>& pos,
+                   const std::string& programPath, const std::string& invokedAs) {
+  const bool ru = (lang == "ru");
+  const bool nonInteractive = hasFlag(pos, "--non-interactive") || hasFlag(pos, "--yes");
+
+  std::string err;
+  if (!ensureConfigFile(configPath, err)) {
+    std::cerr << err << std::endl;
+    return 1;
+  }
+
+  json cfg = loadJsonFile(configPath);
+
+  if (nonInteractive || !isatty(STDIN_FILENO)) {
+    applyRecommendedSetupDefaults(cfg);
+    saveJsonFile(configPath, cfg);
+    std::cout << json{{"ok", true}, {"mode", "non-interactive"}, {"command", invokedAs}, {"config", configPath}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  std::cout << (ru ? "\nДобро пожаловать в NexaClaw Setup Wizard 🚀\n" : "\nWelcome to NexaClaw Setup Wizard 🚀\n");
+  std::cout << (ru ? "Команда: " : "Command: ") << invokedAs << "\n";
+
+  while (true) {
+    printSetupSummary(cfg, lang);
+    std::cout << "\n";
+    std::cout << (ru ? "[1] Применить рекомендованные безопасные настройки\n" : "[1] Apply recommended safe defaults\n");
+    std::cout << (ru ? "[2] Настроить gateway auth (off/token)\n" : "[2] Configure gateway auth (off/token)\n");
+    std::cout << (ru ? "[3] Настроить DM scope (main/per-peer/per-channel-peer)\n" : "[3] Configure DM scope (main/per-peer/per-channel-peer)\n");
+    std::cout << (ru ? "[4] Настроить Telegram (enabled + dmPolicy)\n" : "[4] Configure Telegram (enabled + dmPolicy)\n");
+    std::cout << (ru ? "[5] Настроить модель (apiKeyEnv + current model)\n" : "[5] Configure model (apiKeyEnv + current model)\n");
+    std::cout << (ru ? "[6] Сохранить и выйти\n" : "[6] Save and exit\n");
+    std::cout << (ru ? "[7] Сохранить и запустить doctor\n" : "[7] Save and run doctor\n");
+    std::cout << (ru ? "[8] Сохранить и запустить gateway\n" : "[8] Save and start gateway\n");
+    std::cout << (ru ? "[0] Выход без сохранения\n" : "[0] Exit without saving\n");
+
+    const std::string choice = promptLine(ru ? "Выбор" : "Choice", "6");
+    if (choice == "0") {
+      std::cout << (ru ? "Выход без изменений." : "Exit without changes.") << std::endl;
+      return 0;
+    }
+    if (choice == "1") {
+      applyRecommendedSetupDefaults(cfg);
+      continue;
+    }
+    if (choice == "2") {
+      const std::string mode = promptLine("gateway.auth.mode", cfg["gateway"]["auth"].value("mode", "off"));
+      if (mode == "off" || mode == "token") cfg["gateway"]["auth"]["mode"] = mode;
+      cfg["gateway"]["auth"]["tokenEnv"] = promptLine("gateway.auth.tokenEnv", cfg["gateway"]["auth"].value("tokenEnv", "NEXACLAW_GATEWAY_TOKEN"));
+      continue;
+    }
+    if (choice == "3") {
+      const std::string scope = promptLine("api.dmScope", cfg["api"].value("dmScope", "main"));
+      if (scope == "main" || scope == "per-peer" || scope == "per-channel-peer") cfg["api"]["dmScope"] = scope;
+      continue;
+    }
+    if (choice == "4") {
+      const std::string enabled = promptLine("telegram.enabled (true/false)", cfg["telegram"].value("enabled", false) ? "true" : "false");
+      cfg["telegram"]["enabled"] = (enabled == "true" || enabled == "1" || enabled == "yes");
+      const std::string dmPolicy = promptLine("telegram.dmPolicy", cfg["telegram"].value("dmPolicy", "pairing"));
+      if (dmPolicy == "open" || dmPolicy == "allowlist" || dmPolicy == "pairing" || dmPolicy == "disabled") cfg["telegram"]["dmPolicy"] = dmPolicy;
+      continue;
+    }
+    if (choice == "5") {
+      cfg["model"]["apiKeyEnv"] = promptLine("model.apiKeyEnv", cfg["model"].value("apiKeyEnv", "OPENAI_API_KEY"));
+      cfg["modelsConfig"]["routing"]["current"] = promptLine("modelsConfig.routing.current", cfg["modelsConfig"]["routing"].value("current", "openai/gpt-4o-mini"));
+      continue;
+    }
+    if (choice == "6" || choice == "7" || choice == "8") {
+      saveJsonFile(configPath, cfg);
+      std::cout << (ru ? "Конфиг сохранён: " : "Config saved: ") << configPath << std::endl;
+      if (choice == "7") return runDoctor(configPath, lang);
+      if (choice == "8") return runGatewayStart(configPath, programPath);
+      return 0;
+    }
+
+    std::cout << (ru ? "Неизвестный пункт меню" : "Unknown menu item") << std::endl;
+  }
+}
+
 int runSystemEvent(const std::string& configPath, const std::string& text) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
   const std::string base = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
@@ -808,6 +949,10 @@ int main(int argc, char** argv) {
     if (command == "status") return runStatus(configPath, lang);
     if (command == "health") return runHealth(configPath);
     if (command == "sessions") return runSessions(configPath);
+
+    if (command == "setup" || command == "onboard" || command == "configure") {
+      return runSetupWizard(configPath, lang, pos, programPath, command);
+    }
 
     if (command == "gateway") {
       if (pos.size() >= 2 && pos[1] == "status") return runGatewayStatus(configPath);
@@ -870,7 +1015,7 @@ int main(int argc, char** argv) {
       std::cerr << "Unknown image-fallbacks subcommand" << std::endl; return 1;
     }
 
-    std::set<std::string> compatTop = {"setup","onboard","configure","dashboard","reset","uninstall","update","message","agent","agents","acp","memory","nodes","devices","node","approvals","sandbox","dns","docs","hooks","webhooks","plugins","channels","skills","tui","voicecall","directory"};
+    std::set<std::string> compatTop = {"dashboard","reset","uninstall","update","message","agent","agents","acp","memory","nodes","devices","node","approvals","sandbox","dns","docs","hooks","webhooks","plugins","channels","skills","tui","voicecall","directory"};
     if (compatTop.count(command)) return (printCompatNotImplemented(command, lang), 2);
 
     if (command != "run") {

@@ -15,8 +15,8 @@ Audit date: 2026-02-18
 
 - OpenClaw top-level command surface in docs: ~40 commands.
 - NexaClaw currently has:
-  - ~13 top-level commands with real behavior (`status/health/doctor/sessions/gateway/security/cron/tools/browser/config/models/logs/system/pairing` + image-fallbacks)
-  - compatibility stubs for the rest (40/40 top-level names recognized; practical coverage increased in Stage 12).
+  - ~16 top-level commands with real behavior (`status/health/doctor/sessions/setup/onboard/configure/gateway/security/cron/tools/browser/config/models/logs/system/pairing` + image-fallbacks)
+  - compatibility stubs for the rest (40/40 top-level names recognized; practical coverage increased in Stage 12/13).
 - Practical baseline is strong for local single-agent + Telegram + cron/tools/models routing.
 - Full OpenClaw parity is still blocked by several architectural gaps.
 
