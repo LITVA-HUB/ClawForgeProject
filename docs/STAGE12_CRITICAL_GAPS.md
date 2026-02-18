@@ -16,7 +16,7 @@ Audit date: 2026-02-18
 - OpenClaw top-level command surface in docs: ~40 commands.
 - NexaClaw currently has:
   - ~11 top-level commands with real behavior (`status/health/doctor/sessions/cron/tools/browser/config/models/logs/system/pairing` + image-fallbacks)
-  - compatibility stubs for most other top-level commands.
+  - compatibility stubs for the rest (40/40 top-level names recognized; ~27.5% with real behavior).
 - Practical baseline is strong for local single-agent + Telegram + cron/tools/models routing.
 - Full OpenClaw parity is still blocked by several architectural gaps.
 
@@ -85,13 +85,25 @@ Audit date: 2026-02-18
 
 ---
 
+## 6) Secure DM/session isolation + security audit baseline
+**Gap:** no dedicated `security audit` command and no parity for secure DM recommendations (`per-account-channel-peer` class of scopes + risks diagnostics).
+
+**Why critical:** in multi-user inbox setups, weak DM scoping can leak context across users; OpenClaw treats this as a first-class security check.
+
+**Minimum target:**
+- `nexaclaw security audit` baseline checks (DM scope, auth token env, file permissions)
+- Session scope extensions for shared inboxes (`per-account-channel-peer` equivalent)
+- Actionable warnings/fixes in CLI output
+
+---
+
 ## P1 (high) — next after P0
 
 1. `agent` / `agents` command family (isolated agents, add/list/delete baseline)
 2. `channels` command family (status/list/add/remove for at least Telegram+Discord baseline)
-3. `security audit` command (DM scope risk checks, token/env checks, file perms checks)
-4. `memory status/index/search` local semantic memory tooling
-5. `sessions` enhancement (filters, active window, richer metadata)
+3. `memory status/index/search` local semantic memory tooling
+4. `sessions` enhancement (filters, active window, richer metadata)
+5. `status --deep/--usage` parity surface
 
 ---
 
@@ -108,11 +120,12 @@ Audit date: 2026-02-18
 
 1. **Gateway + config apply/patch RPC**
 2. **Cron semantic parity (`status/edit/enable/disable/runs` + sessionTarget/delivery)**
-3. **Message send baseline + channel target validation**
-4. **OAuth device-code flow for `openai-codex`**
-5. **Browser real backend milestone (Playwright)**
+3. **Secure DM/session isolation + `security audit` baseline**
+4. **Message send baseline + channel target validation**
+5. **OAuth device-code flow for `openai-codex`**
+6. **Browser real backend milestone (Playwright)**
 
-This order maximizes operational control first, then automation reliability, then auth/browser UX.
+This order maximizes operational control first, then automation reliability + safety, then auth/browser UX.
 
 ---
 
