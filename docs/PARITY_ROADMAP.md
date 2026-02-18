@@ -1,6 +1,6 @@
 # PARITY ROADMAP (ClawForge vs OpenClaw)
 
-> Updated after Stage 9.
+> Updated after Stage 11.
 
 ## Practical parity matrix
 
@@ -12,6 +12,7 @@
 | Cron jobs (`every`, `at`, `cron`) | ✅ | ⚠️ | Partial | API complete baseline, CLI `cron list` |
 | CLI UX + doctor | ✅ | ✅ | Closed | RU/EN + compatibility dispatcher |
 | Multi-model providers + aliases + fallbacks | ✅ | ✅ | Closed (baseline) | openai/anthropic/openrouter/gemini/minimax |
+| Models auth parity beyond API keys | ✅ | ⚠️ | Partial (Stage 11 baseline) | local auth profiles + manual OAuth token setup; no device-code flow yet |
 | OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + stubs for not-yet branches |
 | Telegram channel baseline | ✅ | ⚠️ | Partial | polling+pairing, no webhooks/sharding |
 | Browser relay endpoints | ✅ | ⚠️ | Partial | status/open real, snapshot diagnostic stub |
@@ -24,4 +25,4 @@
 
 ## Next recommended step
 
-Expand compatibility stubs branch-by-branch (`gateway`, `browser`, `system`, `channels`) into real implementations and add CLI e2e tests for parity-critical flows.
+Complete OAuth device-code flow and encrypted token-at-rest support; then continue branch-by-branch compatibility expansion (`gateway`, `browser`, `system`, `channels`) with parity e2e tests.

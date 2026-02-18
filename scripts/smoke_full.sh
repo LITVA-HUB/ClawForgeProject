@@ -6,6 +6,7 @@ cd "$(dirname "$0")/.."
 scripts/smoke_stage6.sh >/dev/null
 scripts/smoke_models_cli.sh >/dev/null
 scripts/smoke_stage10_cli.sh >/dev/null
+scripts/smoke_stage11_models_auth.sh >/dev/null
 
 ./build/clawforge run --config config/config.json > /tmp/clawforge-full.log 2>&1 &
 PID=$!

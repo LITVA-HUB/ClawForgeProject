@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include "core/Logger.hpp"
+#include "models/AuthProfiles.hpp"
 #include "util/Shell.hpp"
 
 namespace clawforge::llm {
@@ -94,16 +95,16 @@ std::string parseResponseByStyle(const json& parsed, const std::string& style) {
   return "LLM malformed response";
 }
 
-std::string requestSingle(const ResolvedModel& model, const core::ModelConfig& baseConfig,
+std::string requestSingle(const core::AppConfig& cfg, const ResolvedModel& model, const core::ModelConfig& baseConfig,
                           const std::vector<ChatMessage>& messages) {
-  const char* key = std::getenv(model.apiKeyEnv.c_str());
-  if (!key || std::string(key).empty()) {
-    return "LLM key not found for " + model.ref + ": env " + model.apiKeyEnv;
+  const auto auth = clawforge::models::AuthProfileStore::resolveForProvider(cfg.stateDir, model.provider, model.apiKeyEnv);
+  if (auth.token.empty()) {
+    return "LLM key not found for " + model.ref + ": env " + model.apiKeyEnv + " or active auth profile";
   }
 
   json payload;
   std::string endpoint = model.endpoint;
-  std::string authHeader = std::string("Authorization: Bearer ") + key;
+  std::string authHeader = std::string("Authorization: Bearer ") + auth.token;
   std::string extraHeader;
 
   if (model.apiStyle == "openai_chat") {
@@ -122,9 +123,9 @@ std::string requestSingle(const ResolvedModel& model, const core::ModelConfig& b
       payload["messages"].push_back({{"role", m.role == "assistant" ? "assistant" : "user"}, {"content", m.content}});
     }
     extraHeader = "anthropic-version: 2023-06-01";
-    authHeader = std::string("x-api-key: ") + key;
+    authHeader = std::string("x-api-key: ") + auth.token;
   } else if (model.apiStyle == "gemini_generate_content") {
-    endpoint = endpoint + "/" + model.model + ":generateContent?key=" + key;
+    endpoint = endpoint + "/" + model.model + ":generateContent?key=" + auth.token;
     payload["contents"] = json::array();
     for (const auto& m : messages) {
       payload["contents"].push_back({{"role", m.role == "assistant" ? "model" : "user"},
@@ -179,7 +180,7 @@ std::string OpenAICompatClient::complete(const std::vector<ChatMessage>& message
       continue;
     }
 
-    const std::string out = requestSingle(*resolved, config_.model, messages);
+    const std::string out = requestSingle(config_, *resolved, config_.model, messages);
     if (out.rfind("LLM ", 0) != 0 && out.rfind("Unsupported", 0) != 0) return out;
     errors.push_back(out);
   }

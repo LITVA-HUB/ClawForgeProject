@@ -1,4 +1,4 @@
-# CLI Parity Matrix (OpenClaw docs audit -> ClawForge Stage 10)
+# CLI Parity Matrix (OpenClaw docs audit -> ClawForge Stage 11)
 
 Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
@@ -20,7 +20,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `tools` | list/call | implemented | `tools list`, `tools call <name> --json <payload>` |
 | `browser` | status/open/snapshot/... | partial | `status|open|snapshot` implemented; snapshot still diagnostic baseline |
 | `config` | get/set | partial | expanded key coverage, not full OpenClaw config surface |
-| `models` | list/status/set/aliases/fallbacks/probe | implemented | plus `set-image` |
+| `models` | list/status/set/aliases/fallbacks/probe/auth | implemented | plus `set-image`, auth profiles |
 | `image-fallbacks` | list/add/remove/clear | implemented | added as baseline config ops |
 | `logs` | tail/... | partial | `logs tail [lines]` (audit file tail) |
 | `system` | event/... | partial | `system event <text>` baseline enqueue path |
@@ -80,14 +80,20 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
 ### Models
 - `models list|status|set|aliases|fallbacks` — **implemented**
-- `models probe` — **implemented** (no token-spend baseline health)
+- `models probe` — **implemented** (shows auth source env/profile, no token-spend calls)
 - `models set-image` — **implemented** (config op baseline)
+- `models auth list|add|paste-token|setup-token|use|remove` — **implemented baseline** (local token store, manual OAuth token helper)
 - `image-fallbacks list|add|remove|clear` — **implemented**
 
 ### Logs/System
 - `logs tail [lines]` — **implemented** (audit file tail)
 - `system event <text>` — **implemented** (API path when available, local fallback to main session system message)
 
-## Stage 10 summary
+## Stage 11 summary
 - Focus for this sprint: deep practical parity on frequently-used operational CLI branches.
 - Where full OpenClaw feature equivalence is impossible now, ClawForge returns explicit baseline diagnostics instead of silent gaps.
+
+
+### OAuth parity note
+- `models auth setup-token --provider openai-codex` is a **manual token setup baseline**.
+- Device-code OAuth flow is not implemented yet; CLI prints an explicit warning and stores only user-provided token.

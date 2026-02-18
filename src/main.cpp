@@ -18,6 +18,7 @@
 #include "core/Config.hpp"
 #include "core/EventBus.hpp"
 #include "core/Logger.hpp"
+#include "models/AuthProfiles.hpp"
 #include "session/SessionStore.hpp"
 #include "tools/BuiltinTools.hpp"
 #include "tools/ToolRegistry.hpp"
@@ -58,10 +59,15 @@ void printCompatNotImplemented(const std::string& cmd, const std::string& lang) 
             << cmd << "\n" << (lang == "ru" ? "Смотри docs/CLI_PARITY.md" : "See docs/CLI_PARITY.md") << std::endl;
 }
 
+std::optional<std::string> argValue(const std::vector<std::string>& pos, const std::string& key) {
+  for (size_t i = 0; i + 1 < pos.size(); ++i) if (pos[i] == key) return pos[i + 1];
+  return std::nullopt;
+}
+
 void printHelp(const std::string& lang) {
   const bool ru = (lang == "ru");
   std::cout << (ru ? "ClawForge CLI\n\n" : "ClawForge CLI\n\n");
-  std::cout << "Usage:\n  clawforge [run] [--config <path>]\n  clawforge status|health|doctor|sessions\n  clawforge cron list\n  clawforge tools list\n  clawforge pairing list|approve <code>\n  clawforge config get <key>|set <key> <value>\n  clawforge models list|status|set <provider/model|alias>\n  clawforge models aliases list|add|remove\n  clawforge models fallbacks list|add|remove|clear\n";
+  std::cout << "Usage:\n  clawforge [run] [--config <path>]\n  clawforge status|health|doctor|sessions\n  clawforge cron list\n  clawforge tools list\n  clawforge pairing list|approve <code>\n  clawforge config get <key>|set <key> <value>\n  clawforge models list|status|probe|set <provider/model|alias>\n  clawforge models aliases list|add|remove\n  clawforge models fallbacks list|add|remove|clear\n  clawforge models auth list|add|paste-token|setup-token|use|remove\n";
   std::cout << (ru ? "\nСовместимость OpenClaw: неизвестные top-level ветки отдаются как compatibility stub вместо unknown (см. docs/CLI_PARITY.md).\n"
                    : "\nOpenClaw compatibility: unknown top-level branches return compatibility stubs instead of hard unknown (see docs/CLI_PARITY.md).\n");
 }
@@ -128,9 +134,124 @@ int runModelsList(const std::string& configPath) {
 int runModelsStatus(const std::string& configPath) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
   json providers = json::array();
-  for (const auto& [name, p] : cfg.modelProviders) providers.push_back({{"provider", name}, {"apiStyle", p.apiStyle}, {"endpoint", p.endpoint}, {"apiKeyEnv", p.apiKeyEnv}, {"keyPresent", (std::getenv(p.apiKeyEnv.c_str()) && std::string(std::getenv(p.apiKeyEnv.c_str())).size() > 0)}});
+  for (const auto& [name, p] : cfg.modelProviders) {
+    const auto auth = clawforge::models::AuthProfileStore::resolveForProvider(cfg.stateDir, name, p.apiKeyEnv);
+    providers.push_back({{"provider", name},
+                         {"apiStyle", p.apiStyle},
+                         {"endpoint", p.endpoint},
+                         {"apiKeyEnv", p.apiKeyEnv},
+                         {"keyPresent", auth.source != "missing"},
+                         {"authSource", auth.source},
+                         {"authMode", auth.mode},
+                         {"profileId", auth.profileId},
+                         {"expiresAt", auth.expiresAt},
+                         {"expired", auth.expired},
+                         {"warnings", auth.warnings}});
+  }
   std::cout << json({{"ok", true}, {"current", cfg.modelRouting.current}, {"providers", providers}}).dump(2) << std::endl; return 0;
 }
+
+int runModelsAuth(const std::string& configPath, const std::vector<std::string>& pos) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  clawforge::models::AuthProfileStore store(cfg.stateDir);
+  if (!store.init()) { std::cerr << "Cannot init auth profile store" << std::endl; return 1; }
+
+  if (pos.size() >= 3 && pos[2] == "list") {
+    json arr = json::array();
+    for (const auto& p : store.list()) {
+      arr.push_back({{"id", p.id}, {"provider", p.provider}, {"mode", p.mode}, {"expiresAt", p.expiresAt},
+                     {"expired", clawforge::models::AuthProfileStore::isExpired(p.expiresAt)}, {"meta", p.meta}, {"token", "***"}});
+    }
+    std::cout << json{{"ok", true}, {"profiles", arr}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (pos.size() >= 3 && pos[2] == "add") {
+    const auto provider = argValue(pos, "--provider");
+    const auto profileId = argValue(pos, "--profile-id");
+    const auto apiKeyEnv = argValue(pos, "--api-key-env");
+    const auto tokenEnv = argValue(pos, "--token-env");
+    if (!provider.has_value() || !profileId.has_value() || (!apiKeyEnv.has_value() && !tokenEnv.has_value())) {
+      std::cerr << "Usage: models auth add --provider <name> --profile-id <id> --api-key-env <ENV>|--token-env <ENV>" << std::endl;
+      return 1;
+    }
+    const std::string envName = apiKeyEnv.has_value() ? *apiKeyEnv : *tokenEnv;
+    const char* envVal = std::getenv(envName.c_str());
+    if (!envVal || std::string(envVal).empty()) { std::cerr << "Env is empty or missing: " << envName << std::endl; return 1; }
+    clawforge::models::AuthProfile p;
+    p.id = *profileId; p.provider = *provider; p.mode = apiKeyEnv.has_value() ? "api_key" : "oauth_token"; p.token = envVal; p.meta = json{{"sourceEnv", envName}};
+    if (!store.upsert(p)) return 1;
+    std::cout << json{{"ok", true}, {"profileId", p.id}, {"provider", p.provider}, {"mode", p.mode}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (pos.size() >= 3 && pos[2] == "paste-token") {
+    const auto provider = argValue(pos, "--provider");
+    const auto profileId = argValue(pos, "--profile-id");
+    auto token = argValue(pos, "--token");
+    const auto expiresIn = argValue(pos, "--expires-in");
+    if (!provider.has_value() || !profileId.has_value() || !token.has_value()) {
+      std::cerr << "Usage: models auth paste-token --provider <name> --profile-id <id> --token <value> [--expires-in seconds]" << std::endl;
+      return 1;
+    }
+    clawforge::models::AuthProfile p;
+    p.id = *profileId; p.provider = *provider; p.mode = "oauth_token"; p.token = *token; p.meta = json{{"setup", "paste-token"}};
+    if (expiresIn.has_value()) p.expiresAt = clawforge::models::AuthProfileStore::addSecondsUtcRfc3339(std::stoi(*expiresIn));
+    if (!store.upsert(p)) return 1;
+    std::cout << json{{"ok", true}, {"profileId", p.id}, {"provider", p.provider}, {"mode", p.mode}, {"expiresAt", p.expiresAt}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (pos.size() >= 3 && pos[2] == "setup-token") {
+    const auto provider = argValue(pos, "--provider");
+    const auto profileId = argValue(pos, "--profile-id");
+    auto token = argValue(pos, "--token");
+    const auto expiresIn = argValue(pos, "--expires-in");
+    if (!provider.has_value() || *provider != "openai-codex") {
+      std::cerr << "setup-token baseline currently supports --provider openai-codex" << std::endl;
+      return 1;
+    }
+    std::string id = profileId.value_or("openai-codex-default");
+    if (!token.has_value()) {
+      std::cout << "Paste OAuth token for openai-codex (input hidden by terminal settings is not guaranteed in baseline): ";
+      std::string in; std::getline(std::cin, in);
+      token = in;
+    }
+    if (!token.has_value() || token->empty()) {
+      std::cerr << "No token provided. Device-code OAuth flow is not implemented yet; obtain token externally and pass --token." << std::endl;
+      return 1;
+    }
+    clawforge::models::AuthProfile p;
+    p.id = id; p.provider = *provider; p.mode = "oauth_token"; p.token = *token;
+    p.meta = json{{"setup", "setup-token"}, {"note", "Device-code flow is not implemented in Stage11 baseline; token was provided manually."}};
+    if (expiresIn.has_value()) p.expiresAt = clawforge::models::AuthProfileStore::addSecondsUtcRfc3339(std::stoi(*expiresIn));
+    if (!store.upsert(p)) return 1;
+    std::cout << json{{"ok", true}, {"provider", p.provider}, {"profileId", p.id}, {"mode", p.mode}, {"expiresAt", p.expiresAt},
+                      {"warning", "Stored manual token; full OAuth device-code flow remains roadmap."}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (pos.size() >= 3 && pos[2] == "use") {
+    const auto provider = argValue(pos, "--provider");
+    const auto profileId = argValue(pos, "--profile-id");
+    if (!provider.has_value() || !profileId.has_value()) { std::cerr << "Usage: models auth use --provider <name> --profile-id <id>" << std::endl; return 1; }
+    if (!store.setActive(*provider, *profileId)) { std::cerr << "Cannot set active profile (not found or provider mismatch)" << std::endl; return 1; }
+    std::cout << json{{"ok", true}, {"provider", *provider}, {"activeProfileId", *profileId}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (pos.size() >= 3 && pos[2] == "remove") {
+    const auto profileId = argValue(pos, "--profile-id");
+    if (!profileId.has_value()) { std::cerr << "Usage: models auth remove --profile-id <id>" << std::endl; return 1; }
+    if (!store.remove(*profileId)) { std::cerr << "Profile not found: " << *profileId << std::endl; return 1; }
+    std::cout << json{{"ok", true}, {"removed", *profileId}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  std::cerr << "Unknown models auth subcommand" << std::endl;
+  return 1;
+}
+
 int runModelsSet(const std::string& configPath, const std::string& value) { auto j = loadJsonFile(configPath); j["modelsConfig"]["routing"]["current"] = value; saveJsonFile(configPath, j); std::cout << "Current model set to " << value << std::endl; return 0; }
 int runModelsAliases(const std::string& configPath, const std::string& action, const std::string& a = "", const std::string& b = "") {
   auto j = loadJsonFile(configPath); auto& aliases = j["modelsConfig"]["routing"]["aliases"]; if (!aliases.is_object()) aliases = json::object();
@@ -253,9 +374,11 @@ int runModelsProbe(const std::string& configPath) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
   json checks = json::array(); bool ok = true;
   for (const auto& [name, p] : cfg.modelProviders) {
-    const char* key = std::getenv(p.apiKeyEnv.c_str());
-    bool present = key && std::string(key).size() > 0;
-    checks.push_back({{"provider", name}, {"endpoint", p.endpoint}, {"apiStyle", p.apiStyle}, {"apiKeyEnv", p.apiKeyEnv}, {"keyPresent", present}});
+    const auto auth = clawforge::models::AuthProfileStore::resolveForProvider(cfg.stateDir, name, p.apiKeyEnv);
+    const bool present = !auth.token.empty();
+    checks.push_back({{"provider", name}, {"endpoint", p.endpoint}, {"apiStyle", p.apiStyle}, {"apiKeyEnv", p.apiKeyEnv},
+                      {"keyPresent", present}, {"authSource", auth.source}, {"authMode", auth.mode}, {"profileId", auth.profileId},
+                      {"expiresAt", auth.expiresAt}, {"expired", auth.expired}, {"warnings", auth.warnings}});
     if (!present) ok = false;
   }
   std::cout << json{{"ok", ok}, {"current", cfg.modelRouting.current}, {"checks", checks}, {"note", "No token-spending remote calls executed"}}.dump(2) << std::endl;
@@ -352,6 +475,7 @@ int main(int argc, char** argv) {
       if (pos.size() >= 2 && pos[1] == "list") return runModelsList(configPath);
       if (pos.size() >= 2 && pos[1] == "status") return runModelsStatus(configPath);
       if (pos.size() >= 2 && pos[1] == "probe") return runModelsProbe(configPath);
+      if (pos.size() >= 3 && pos[1] == "auth") return runModelsAuth(configPath, pos);
       if (pos.size() >= 3 && pos[1] == "set") return runModelsSet(configPath, pos[2]);
       if (pos.size() >= 3 && pos[1] == "set-image") return runModelsSetImage(configPath, pos[2]);
       if (pos.size() >= 3 && pos[1] == "aliases") {

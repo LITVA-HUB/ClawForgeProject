@@ -7,7 +7,7 @@ ClawForge is built as a local-first control plane: sessions, tools, cron, Telegr
 - 🇷🇺 Russian README: [README.ru.md](./README.ru.md)
 - Parity matrix: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
 - CLI parity table: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
-- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md)
+- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md)
 
 ---
 
@@ -71,6 +71,9 @@ curl -s http://127.0.0.1:18890/health
 ./build/clawforge models set anthropic/claude-3-5-haiku-latest --config config/config.json
 ./build/clawforge models aliases add fast anthropic/claude-3-5-haiku-latest --config config/config.json
 ./build/clawforge models fallbacks add openai/gpt-4o-mini --config config/config.json
+./build/clawforge models auth add --provider openai --profile-id work --api-key-env OPENAI_API_KEY --config config/config.json
+./build/clawforge models auth use --provider openai --profile-id work --config config/config.json
+./build/clawforge models auth setup-token --provider openai-codex --profile-id codex --token <token> --expires-in 3600 --config config/config.json
 ./build/clawforge config get model.current --config config/config.json
 ./build/clawforge config set model.current fast --config config/config.json
 ```
@@ -91,6 +94,7 @@ ClawForge Stage 10 provides practical CLI parity for high-value OpenClaw flows.
 - `cron list|add|rm|run|validate`
 - `tools list|call`
 - `models list|status|set|aliases|fallbacks|probe|set-image`
+- `models auth list|add|paste-token|setup-token|use|remove` (local auth profile store)
 - `image-fallbacks list|add|remove|clear`
 - `browser status|open|snapshot` (snapshot is still baseline/diagnostic)
 - `config get/set` (expanded key coverage)
@@ -180,6 +184,7 @@ scripts/smoke_full.sh
 scripts/smoke_stage5.sh
 scripts/smoke_stage6.sh
 scripts/smoke_models_cli.sh
+scripts/smoke_stage11_models_auth.sh
 
 # strict compile gates
 cmake -S . -B build_warnings -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror'
