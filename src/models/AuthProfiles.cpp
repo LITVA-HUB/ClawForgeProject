@@ -1,11 +1,13 @@
 #include "models/AuthProfiles.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <unordered_set>
 
 namespace clawforge::models {
 
@@ -69,7 +71,10 @@ bool AuthProfileStore::init() {
   std::error_code ec;
   std::filesystem::create_directories(path_.parent_path(), ec);
   if (!std::filesystem::exists(path_)) {
-    root_ = json{{"profiles", json::array()}, {"active", json::object()}, {"updatedAt", nowUtcRfc3339()}};
+    root_ = json{{"profiles", json::array()},
+                 {"active", json::object()},
+                 {"order", json::object()},
+                 {"updatedAt", nowUtcRfc3339()}};
     return save();
   }
   return load();
@@ -83,6 +88,7 @@ bool AuthProfileStore::load() {
   root_ = std::move(j);
   if (!root_.contains("profiles") || !root_["profiles"].is_array()) root_["profiles"] = json::array();
   if (!root_.contains("active") || !root_["active"].is_object()) root_["active"] = json::object();
+  if (!root_.contains("order") || !root_["order"].is_object()) root_["order"] = json::object();
   return true;
 }
 
@@ -104,7 +110,8 @@ std::vector<AuthProfile> AuthProfileStore::list() const {
 }
 
 std::optional<AuthProfile> AuthProfileStore::getById(const std::string& id) const {
-  for (const auto& p : list()) if (p.id == id) return p;
+  for (const auto& p : list())
+    if (p.id == id) return p;
   return std::nullopt;
 }
 
@@ -120,6 +127,46 @@ std::optional<AuthProfile> AuthProfileStore::getActiveForProvider(const std::str
   const auto activeId = activeProfileId(provider);
   if (!activeId.has_value()) return std::nullopt;
   return getById(*activeId);
+}
+
+std::vector<std::string> AuthProfileStore::orderForProvider(const std::string& provider) const {
+  std::vector<std::string> out;
+  if (!root_.contains("order") || !root_["order"].is_object()) return out;
+  if (!root_["order"].contains(provider)) return out;
+  const auto& arr = root_["order"][provider];
+  if (!arr.is_array()) return out;
+  for (const auto& v : arr) {
+    if (!v.is_string()) continue;
+    out.push_back(v.get<std::string>());
+  }
+  return out;
+}
+
+bool AuthProfileStore::setOrderForProvider(const std::string& provider,
+                                           const std::vector<std::string>& profileIds) {
+  if (!root_.contains("order") || !root_["order"].is_object()) root_["order"] = json::object();
+
+  json arr = json::array();
+  std::unordered_set<std::string> seen;
+  for (const auto& id : profileIds) {
+    if (id.empty()) continue;
+    if (!seen.insert(id).second) continue;
+    const auto p = getById(id);
+    if (!p.has_value() || p->provider != provider) return false;
+    arr.push_back(id);
+  }
+
+  root_["order"][provider] = std::move(arr);
+  root_["updatedAt"] = nowUtcRfc3339();
+  return save();
+}
+
+bool AuthProfileStore::clearOrderForProvider(const std::string& provider) {
+  if (!root_.contains("order") || !root_["order"].is_object()) return true;
+  if (!root_["order"].contains(provider)) return true;
+  root_["order"].erase(provider);
+  root_["updatedAt"] = nowUtcRfc3339();
+  return save();
 }
 
 bool AuthProfileStore::upsert(const AuthProfile& profile) {
@@ -152,6 +199,7 @@ bool AuthProfileStore::remove(const std::string& profileId) {
   }
   if (!removed) return false;
   root_["profiles"] = std::move(out);
+
   if (root_.contains("active") && root_["active"].is_object()) {
     std::vector<std::string> eraseKeys;
     for (auto it = root_["active"].begin(); it != root_["active"].end(); ++it) {
@@ -159,6 +207,19 @@ bool AuthProfileStore::remove(const std::string& profileId) {
     }
     for (const auto& k : eraseKeys) root_["active"].erase(k);
   }
+
+  if (root_.contains("order") && root_["order"].is_object()) {
+    for (auto it = root_["order"].begin(); it != root_["order"].end(); ++it) {
+      if (!it.value().is_array()) continue;
+      json filtered = json::array();
+      for (const auto& v : it.value()) {
+        if (v.is_string() && v.get<std::string>() == profileId) continue;
+        filtered.push_back(v);
+      }
+      it.value() = std::move(filtered);
+    }
+  }
+
   root_["updatedAt"] = nowUtcRfc3339();
   return save();
 }
@@ -177,19 +238,57 @@ ResolvedAuth AuthProfileStore::resolveForProvider(const std::filesystem::path& s
                                                   const std::string& envKeyName) {
   ResolvedAuth out;
   out.source = "missing";
+  out.mode = "";
 
   AuthProfileStore store(stateDir);
   if (store.init()) {
-    const auto profile = store.getActiveForProvider(provider);
-    if (profile.has_value() && !profile->token.empty()) {
-      out.token = profile->token;
+    std::vector<AuthProfile> candidates;
+    std::unordered_set<std::string> seen;
+
+    if (const auto active = store.getActiveForProvider(provider); active.has_value()) {
+      candidates.push_back(*active);
+      seen.insert(active->id);
+    }
+
+    for (const auto& id : store.orderForProvider(provider)) {
+      if (!seen.insert(id).second) continue;
+      if (const auto p = store.getById(id); p.has_value() && p->provider == provider) {
+        candidates.push_back(*p);
+      }
+    }
+
+    for (const auto& p : store.list()) {
+      if (p.provider != provider) continue;
+      if (!seen.insert(p.id).second) continue;
+      candidates.push_back(p);
+    }
+
+    std::optional<AuthProfile> expiredFallback;
+    for (const auto& p : candidates) {
+      if (p.token.empty()) continue;
+      const bool expired = isExpired(p.expiresAt);
+      if (!expired) {
+        out.token = p.token;
+        out.source = "profile";
+        out.mode = p.mode;
+        out.profileId = p.id;
+        out.expiresAt = p.expiresAt;
+        out.expired = false;
+        out.refreshed = false;
+        return out;
+      }
+      if (!expiredFallback.has_value()) expiredFallback = p;
+    }
+
+    if (expiredFallback.has_value()) {
+      out.token = expiredFallback->token;
       out.source = "profile";
-      out.mode = profile->mode;
-      out.profileId = profile->id;
-      out.expiresAt = profile->expiresAt;
-      out.expired = isExpired(profile->expiresAt);
-      if (out.expired) out.warnings.push_back("active auth profile token is expired");
-      if (!out.expired) return out;
+      out.mode = expiredFallback->mode;
+      out.profileId = expiredFallback->id;
+      out.expiresAt = expiredFallback->expiresAt;
+      out.expired = true;
+      out.refreshed = false;
+      out.warnings.push_back("active auth profile token is expired");
     }
   }
 
@@ -199,8 +298,12 @@ ResolvedAuth AuthProfileStore::resolveForProvider(const std::filesystem::path& s
     out.source = "env";
     out.mode = "env";
     out.profileId.clear();
+    out.expiresAt.clear();
     if (out.expired) out.warnings.push_back("falling back to env key because profile token is expired");
+    out.expired = false;
+    out.refreshed = false;
   }
+
   return out;
 }
 

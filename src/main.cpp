@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -161,12 +162,24 @@ void printCompatNotImplemented(const std::string& cmd, const std::string& lang) 
 }
 
 std::optional<std::string> argValue(const std::vector<std::string>& pos, const std::string& key) {
-  for (size_t i = 0; i + 1 < pos.size(); ++i) if (pos[i] == key) return pos[i + 1];
+  for (size_t i = 0; i + 1 < pos.size(); ++i)
+    if (pos[i] == key) return pos[i + 1];
   return std::nullopt;
 }
 
+std::vector<std::string> argValues(const std::vector<std::string>& pos, const std::string& key) {
+  std::vector<std::string> out;
+  for (size_t i = 0; i + 1 < pos.size(); ++i) {
+    if (pos[i] != key) continue;
+    out.push_back(pos[i + 1]);
+    ++i;
+  }
+  return out;
+}
+
 bool hasFlag(const std::vector<std::string>& pos, const std::string& flag) {
-  for (const auto& x : pos) if (x == flag) return true;
+  for (const auto& x : pos)
+    if (x == flag) return true;
   return false;
 }
 
@@ -207,7 +220,7 @@ bool ensureConfigFile(const std::string& configPath, std::string& error) {
 void printHelp(const std::string& lang) {
   const bool ru = (lang == "ru");
   std::cout << (ru ? "NexaClaw CLI (alias: clawforge)\n\n" : "NexaClaw CLI (alias: clawforge)\n\n");
-  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw setup|onboard|configure [--wizard|--non-interactive]\n  nexaclaw gateway status|start|stop|restart|call\n  nexaclaw security audit [--deep] [--fix]\n  nexaclaw cron status|list|add|edit|enable|disable|run|runs|validate|rm\n  nexaclaw message send --channel telegram --target <chat> --message <text> [--dry-run]\n  nexaclaw channels list|status|capabilities|resolve|add|remove\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|paste-token|setup-token|use|remove\n";
+  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw setup|onboard|configure [--wizard|--non-interactive]\n  nexaclaw gateway status|start|stop|restart|call\n  nexaclaw security audit [--deep] [--fix]\n  nexaclaw cron status|list|add|edit|enable|disable|run|runs|validate|rm\n  nexaclaw browser status|open|navigate|snapshot|click|type|screenshot\n  nexaclaw message send|react|delete|poll --channel telegram ...\n  nexaclaw channels list|status|capabilities|resolve|add|remove\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|login|paste-token|setup-token|use|remove\n  nexaclaw models auth order get|set|clear --provider <name>\n";
   std::cout << (ru ? "\nСовместимость OpenClaw: неизвестные top-level ветки отдаются как compatibility stub вместо unknown (см. docs/CLI_PARITY.md).\n"
                    : "\nOpenClaw compatibility: unknown top-level branches return compatibility stubs instead of hard unknown (see docs/CLI_PARITY.md).\n");
 }
@@ -326,6 +339,7 @@ int runModelsStatus(const std::string& configPath) {
                          {"profileId", auth.profileId},
                          {"expiresAt", auth.expiresAt},
                          {"expired", auth.expired},
+                         {"refreshed", auth.refreshed},
                          {"warnings", auth.warnings}});
   }
   std::cout << json({{"ok", true}, {"current", cfg.modelRouting.current}, {"providers", providers}}).dump(2) << std::endl; return 0;
@@ -334,16 +348,98 @@ int runModelsStatus(const std::string& configPath) {
 int runModelsAuth(const std::string& configPath, const std::vector<std::string>& pos) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
   clawforge::models::AuthProfileStore store(cfg.stateDir);
-  if (!store.init()) { std::cerr << "Cannot init auth profile store" << std::endl; return 1; }
+  if (!store.init()) {
+    std::cerr << "Cannot init auth profile store" << std::endl;
+    return 1;
+  }
 
   if (pos.size() >= 3 && pos[2] == "list") {
     json arr = json::array();
     for (const auto& p : store.list()) {
-      arr.push_back({{"id", p.id}, {"provider", p.provider}, {"mode", p.mode}, {"expiresAt", p.expiresAt},
-                     {"expired", clawforge::models::AuthProfileStore::isExpired(p.expiresAt)}, {"meta", p.meta}, {"token", "***"}});
+      arr.push_back({{"id", p.id},
+                     {"provider", p.provider},
+                     {"mode", p.mode},
+                     {"expiresAt", p.expiresAt},
+                     {"expired", clawforge::models::AuthProfileStore::isExpired(p.expiresAt)},
+                     {"meta", p.meta},
+                     {"token", "***"}});
     }
     std::cout << json{{"ok", true}, {"profiles", arr}}.dump(2) << std::endl;
     return 0;
+  }
+
+  if (pos.size() >= 3 && pos[2] == "order") {
+    const auto provider = argValue(pos, "--provider");
+    if (!provider.has_value()) {
+      std::cerr << "Usage: models auth order <get|set|clear> --provider <name> [--profile-id <id> ...]" << std::endl;
+      return 1;
+    }
+    if (pos.size() < 4) {
+      std::cerr << "Usage: models auth order <get|set|clear> --provider <name>" << std::endl;
+      return 1;
+    }
+
+    const std::string action = pos[3];
+    if (action == "get") {
+      std::cout << json{{"ok", true},
+                        {"provider", *provider},
+                        {"activeProfileId", store.activeProfileId(*provider).value_or("")},
+                        {"order", store.orderForProvider(*provider)}}
+                       .dump(2)
+                << std::endl;
+      return 0;
+    }
+
+    if (action == "set") {
+      std::vector<std::string> ids;
+      for (size_t i = 0; i < pos.size(); ++i) {
+        if (pos[i] == "--profile-id" && i + 1 < pos.size()) {
+          ids.push_back(pos[i + 1]);
+          ++i;
+          continue;
+        }
+        if (pos[i] == "--profiles" && i + 1 < pos.size()) {
+          std::string csv = pos[i + 1];
+          std::string cur;
+          for (char ch : csv) {
+            if (ch == ',') {
+              if (!cur.empty()) ids.push_back(cur);
+              cur.clear();
+            } else {
+              cur.push_back(ch);
+            }
+          }
+          if (!cur.empty()) ids.push_back(cur);
+          ++i;
+        }
+      }
+
+      if (ids.empty()) {
+        std::cerr << "Usage: models auth order set --provider <name> --profile-id <id> [--profile-id <id2>...]" << std::endl;
+        return 1;
+      }
+
+      if (!store.setOrderForProvider(*provider, ids)) {
+        std::cerr << "Cannot set auth order (unknown profile id or provider mismatch)" << std::endl;
+        return 1;
+      }
+
+      std::cout << json{{"ok", true}, {"provider", *provider}, {"order", store.orderForProvider(*provider)}}.dump(2)
+                << std::endl;
+      return 0;
+    }
+
+    if (action == "clear") {
+      if (!store.clearOrderForProvider(*provider)) {
+        std::cerr << "Cannot clear auth order" << std::endl;
+        return 1;
+      }
+      std::cout << json{{"ok", true}, {"provider", *provider}, {"order", json::array()}}.dump(2) << std::endl;
+      return 0;
+    }
+
+    std::cerr << "Unknown models auth order action" << std::endl;
+    return 1;
   }
 
   if (pos.size() >= 3 && pos[2] == "add") {
@@ -357,11 +453,19 @@ int runModelsAuth(const std::string& configPath, const std::vector<std::string>&
     }
     const std::string envName = apiKeyEnv.has_value() ? *apiKeyEnv : *tokenEnv;
     const char* envVal = std::getenv(envName.c_str());
-    if (!envVal || std::string(envVal).empty()) { std::cerr << "Env is empty or missing: " << envName << std::endl; return 1; }
+    if (!envVal || std::string(envVal).empty()) {
+      std::cerr << "Env is empty or missing: " << envName << std::endl;
+      return 1;
+    }
     clawforge::models::AuthProfile p;
-    p.id = *profileId; p.provider = *provider; p.mode = apiKeyEnv.has_value() ? "api_key" : "oauth_token"; p.token = envVal; p.meta = json{{"sourceEnv", envName}};
+    p.id = *profileId;
+    p.provider = *provider;
+    p.mode = apiKeyEnv.has_value() ? "api_key" : "oauth_token";
+    p.token = envVal;
+    p.meta = json{{"sourceEnv", envName}};
     if (!store.upsert(p)) return 1;
-    std::cout << json{{"ok", true}, {"profileId", p.id}, {"provider", p.provider}, {"mode", p.mode}}.dump(2) << std::endl;
+    std::cout << json{{"ok", true}, {"profileId", p.id}, {"provider", p.provider}, {"mode", p.mode}}.dump(2)
+              << std::endl;
     return 0;
   }
 
@@ -375,10 +479,20 @@ int runModelsAuth(const std::string& configPath, const std::vector<std::string>&
       return 1;
     }
     clawforge::models::AuthProfile p;
-    p.id = *profileId; p.provider = *provider; p.mode = "oauth_token"; p.token = *token; p.meta = json{{"setup", "paste-token"}};
+    p.id = *profileId;
+    p.provider = *provider;
+    p.mode = "oauth_token";
+    p.token = *token;
+    p.meta = json{{"setup", "paste-token"}};
     if (expiresIn.has_value()) p.expiresAt = clawforge::models::AuthProfileStore::addSecondsUtcRfc3339(std::stoi(*expiresIn));
     if (!store.upsert(p)) return 1;
-    std::cout << json{{"ok", true}, {"profileId", p.id}, {"provider", p.provider}, {"mode", p.mode}, {"expiresAt", p.expiresAt}}.dump(2) << std::endl;
+    std::cout << json{{"ok", true},
+                      {"profileId", p.id},
+                      {"provider", p.provider},
+                      {"mode", p.mode},
+                      {"expiresAt", p.expiresAt}}
+                     .dump(2)
+              << std::endl;
     return 0;
   }
 
@@ -393,37 +507,225 @@ int runModelsAuth(const std::string& configPath, const std::vector<std::string>&
     }
     std::string id = profileId.value_or("openai-codex-default");
     if (!token.has_value()) {
-      std::cout << "Paste OAuth token for openai-codex (input hidden by terminal settings is not guaranteed in baseline): ";
-      std::string in; std::getline(std::cin, in);
+      std::cout << "Paste OAuth token for openai-codex: ";
+      std::string in;
+      std::getline(std::cin, in);
       token = in;
     }
     if (!token.has_value() || token->empty()) {
-      std::cerr << "No token provided. Device-code OAuth flow is not implemented yet; obtain token externally and pass --token." << std::endl;
+      std::cerr << "No token provided." << std::endl;
       return 1;
     }
     clawforge::models::AuthProfile p;
-    p.id = id; p.provider = *provider; p.mode = "oauth_token"; p.token = *token;
-    p.meta = json{{"setup", "setup-token"}, {"note", "Device-code flow is not implemented in Stage11 baseline; token was provided manually."}};
+    p.id = id;
+    p.provider = *provider;
+    p.mode = "oauth_token";
+    p.token = *token;
+    p.meta = json{{"setup", "setup-token"},
+                  {"note", "Token was provided manually. Prefer `models auth login --provider openai-codex` for OAuth flow."}};
     if (expiresIn.has_value()) p.expiresAt = clawforge::models::AuthProfileStore::addSecondsUtcRfc3339(std::stoi(*expiresIn));
     if (!store.upsert(p)) return 1;
-    std::cout << json{{"ok", true}, {"provider", p.provider}, {"profileId", p.id}, {"mode", p.mode}, {"expiresAt", p.expiresAt},
-                      {"warning", "Stored manual token; full OAuth device-code flow remains roadmap."}}.dump(2) << std::endl;
+    std::cout << json{{"ok", true},
+                      {"provider", p.provider},
+                      {"profileId", p.id},
+                      {"mode", p.mode},
+                      {"expiresAt", p.expiresAt}}
+                     .dump(2)
+              << std::endl;
+    return 0;
+  }
+
+  if (pos.size() >= 3 && pos[2] == "login") {
+    const auto provider = argValue(pos, "--provider");
+    const auto profileId = argValue(pos, "--profile-id");
+    const auto sourceProfileId = argValue(pos, "--source-profile-id");
+    const auto importPathArg = argValue(pos, "--openclaw-auth-file");
+    const bool skipLogin = hasFlag(pos, "--skip-login") || importPathArg.has_value();
+    if (!provider.has_value()) {
+      std::cerr << "Usage: models auth login --provider <name> [--profile-id <dest-id>] [--source-profile-id <id>] [--skip-login] [--openclaw-auth-file <path>]" << std::endl;
+      return 1;
+    }
+
+    if (*provider != "openai-codex") {
+      std::cerr << "models auth login baseline currently supports --provider openai-codex" << std::endl;
+      return 1;
+    }
+
+    if (!skipLogin) {
+      std::string cmd = "openclaw models auth login --provider " + clawforge::util::Shell::quote(*provider);
+      if (profileId.has_value()) cmd += " --profile-id " + clawforge::util::Shell::quote(*profileId);
+      const auto loginRes = clawforge::util::Shell::run(cmd);
+      if (loginRes.exitCode != 0) {
+        std::cout << json{{"ok", false},
+                          {"error", "openclaw OAuth login failed"},
+                          {"provider", *provider},
+                          {"details", loginRes.output}}
+                         .dump(2)
+                  << std::endl;
+        return 1;
+      }
+    }
+
+    std::filesystem::path openclawAuthPath;
+    if (importPathArg.has_value() && !importPathArg->empty()) {
+      openclawAuthPath = *importPathArg;
+    } else if (const char* stateDir = std::getenv("OPENCLAW_STATE_DIR"); stateDir && std::string(stateDir).size() > 0) {
+      openclawAuthPath = std::filesystem::path(stateDir) / "agents" / "main" / "agent" / "auth-profiles.json";
+    } else if (const char* home = std::getenv("HOME"); home && std::string(home).size() > 0) {
+      openclawAuthPath = std::filesystem::path(home) / ".openclaw" / "agents" / "main" / "agent" / "auth-profiles.json";
+    }
+
+    auto raw = clawforge::util::FileUtil::readText(openclawAuthPath);
+    if (!raw.has_value()) {
+      std::cout << json{{"ok", false},
+                        {"error", "Cannot read OpenClaw auth profile store for import"},
+                        {"path", openclawAuthPath.string()}}
+                       .dump(2)
+                << std::endl;
+      return 1;
+    }
+
+    auto parsed = json::parse(*raw, nullptr, false);
+    if (parsed.is_discarded() || !parsed.is_object()) {
+      std::cout << json{{"ok", false}, {"error", "OpenClaw auth store JSON is invalid"}}.dump(2) << std::endl;
+      return 1;
+    }
+
+    struct Imported {
+      std::string key;
+      std::string profileId;
+      std::string token;
+      std::string expiresAt;
+      std::string accountId;
+    };
+
+    std::vector<Imported> imported;
+
+    const auto readOne = [&](const std::string& key, const json& v) {
+      if (!v.is_object()) return;
+      std::string prov = v.value("provider", "");
+      if (prov.empty()) {
+        const auto colon = key.find(':');
+        prov = (colon == std::string::npos) ? key : key.substr(0, colon);
+      }
+      if (prov != *provider) return;
+
+      const std::string token = v.value("access", v.value("token", ""));
+      if (token.empty()) return;
+
+      Imported item;
+      item.key = key;
+      item.token = token;
+      item.accountId = v.value("accountId", "");
+      item.profileId = v.value("profileId", "");
+      if (item.profileId.empty()) {
+        const auto colon = key.find(':');
+        if (colon != std::string::npos && colon + 1 < key.size()) item.profileId = key.substr(colon + 1);
+      }
+      if (v.contains("expires") && v["expires"].is_string()) item.expiresAt = v["expires"].get<std::string>();
+      imported.push_back(std::move(item));
+    };
+
+    if (parsed.contains("profiles")) {
+      const auto& profiles = parsed["profiles"];
+      if (profiles.is_object()) {
+        for (auto it = profiles.begin(); it != profiles.end(); ++it) readOne(it.key(), it.value());
+      } else if (profiles.is_array()) {
+        for (const auto& v : profiles) {
+          if (!v.is_object()) continue;
+          readOne(v.value("id", ""), v);
+        }
+      }
+    } else {
+      for (auto it = parsed.begin(); it != parsed.end(); ++it) readOne(it.key(), it.value());
+    }
+
+    if (imported.empty()) {
+      std::cout << json{{"ok", false},
+                        {"error", "OAuth login succeeded, but no importable token found in OpenClaw store"},
+                        {"path", openclawAuthPath.string()}}
+                       .dump(2)
+                << std::endl;
+      return 1;
+    }
+
+    Imported chosen = imported.front();
+    if (sourceProfileId.has_value()) {
+      bool found = false;
+      for (const auto& it : imported) {
+        if (it.profileId == *sourceProfileId || it.key == *sourceProfileId ||
+            it.key == (*provider + ":" + *sourceProfileId)) {
+          chosen = it;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        std::cout << json{{"ok", false},
+                          {"error", "Requested source-profile-id not found in imported OpenClaw auth data"},
+                          {"requested", *sourceProfileId}}
+                         .dump(2)
+                  << std::endl;
+        return 1;
+      }
+    }
+
+    clawforge::models::AuthProfile p;
+    p.id = profileId.value_or(chosen.profileId.empty() ? std::string("openai-codex-default") : chosen.profileId);
+    p.provider = *provider;
+    p.mode = "oauth_token";
+    p.token = chosen.token;
+    p.expiresAt = chosen.expiresAt;
+    p.meta = json{{"importedFrom", "openclaw models auth login"},
+                  {"sourcePath", openclawAuthPath.string()},
+                  {"openclawProfile", chosen.key},
+                  {"sourceProfileId", chosen.profileId},
+                  {"accountId", chosen.accountId},
+                  {"skipLogin", skipLogin}};
+
+    if (!store.upsert(p)) {
+      std::cout << json{{"ok", false}, {"error", "Cannot store imported auth profile"}}.dump(2) << std::endl;
+      return 1;
+    }
+    (void)store.setActive(*provider, p.id);
+
+    std::cout << json{{"ok", true},
+                      {"provider", p.provider},
+                      {"profileId", p.id},
+                      {"mode", p.mode},
+                      {"expiresAt", p.expiresAt},
+                      {"imported", true},
+                      {"path", openclawAuthPath.string()}}
+                     .dump(2)
+              << std::endl;
     return 0;
   }
 
   if (pos.size() >= 3 && pos[2] == "use") {
     const auto provider = argValue(pos, "--provider");
     const auto profileId = argValue(pos, "--profile-id");
-    if (!provider.has_value() || !profileId.has_value()) { std::cerr << "Usage: models auth use --provider <name> --profile-id <id>" << std::endl; return 1; }
-    if (!store.setActive(*provider, *profileId)) { std::cerr << "Cannot set active profile (not found or provider mismatch)" << std::endl; return 1; }
+    if (!provider.has_value() || !profileId.has_value()) {
+      std::cerr << "Usage: models auth use --provider <name> --profile-id <id>" << std::endl;
+      return 1;
+    }
+    if (!store.setActive(*provider, *profileId)) {
+      std::cerr << "Cannot set active profile (not found or provider mismatch)" << std::endl;
+      return 1;
+    }
     std::cout << json{{"ok", true}, {"provider", *provider}, {"activeProfileId", *profileId}}.dump(2) << std::endl;
     return 0;
   }
 
   if (pos.size() >= 3 && pos[2] == "remove") {
     const auto profileId = argValue(pos, "--profile-id");
-    if (!profileId.has_value()) { std::cerr << "Usage: models auth remove --profile-id <id>" << std::endl; return 1; }
-    if (!store.remove(*profileId)) { std::cerr << "Profile not found: " << *profileId << std::endl; return 1; }
+    if (!profileId.has_value()) {
+      std::cerr << "Usage: models auth remove --profile-id <id>" << std::endl;
+      return 1;
+    }
+    if (!store.remove(*profileId)) {
+      std::cerr << "Profile not found: " << *profileId << std::endl;
+      return 1;
+    }
     std::cout << json{{"ok", true}, {"removed", *profileId}}.dump(2) << std::endl;
     return 0;
   }
@@ -458,10 +760,14 @@ int runBrowserStatus(const std::string& configPath) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
   const std::string baseUrl = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
   const auto remote = httpGetJson(baseUrl + "/api/browser/status", authHeaderFromEnv(cfg));
-  if (remote.has_value()) { std::cout << remote->dump(2) << std::endl; return remote->value("ok", false) ? 0 : 1; }
+  if (remote.has_value()) {
+    std::cout << remote->dump(2) << std::endl;
+    return remote->value("ok", false) ? 0 : 1;
+  }
   clawforge::browser::BrowserRelay relay(cfg.browser);
-  std::cout << relay.status().dump(2) << std::endl;
-  return 0;
+  const auto out = relay.status();
+  std::cout << out.dump(2) << std::endl;
+  return out.value("ok", false) ? 0 : 1;
 }
 
 int runBrowserOpen(const std::string& configPath, const std::string& url) {
@@ -475,13 +781,108 @@ int runBrowserOpen(const std::string& configPath, const std::string& url) {
   return out.value("ok", false) ? 0 : 1;
 }
 
-int runBrowserSnapshot(const std::string& configPath, const std::string& urlHint) {
+int runBrowserSnapshot(const std::string& configPath, const std::vector<std::string>& pos) {
+  std::string urlHint;
+  if (pos.size() >= 3 && pos[2].rfind("--", 0) != 0) urlHint = pos[2];
+  const std::string targetId = argValue(pos, "--target-id").value_or("");
+
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
   const std::string baseUrl = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
-  const auto remote = httpPostJson(baseUrl + "/api/browser/snapshot", json{{"url", urlHint}}, authHeaderFromEnv(cfg));
-  if (remote.has_value()) { std::cout << remote->dump(2) << std::endl; return remote->value("ok", false) ? 0 : 1; }
+  const auto remote = httpPostJson(baseUrl + "/api/browser/snapshot", json{{"url", urlHint}, {"targetId", targetId}}, authHeaderFromEnv(cfg));
+  if (remote.has_value()) {
+    std::cout << remote->dump(2) << std::endl;
+    return remote->value("ok", false) ? 0 : 1;
+  }
   clawforge::browser::BrowserRelay relay(cfg.browser);
-  const auto out = relay.snapshot(urlHint);
+  const auto out = relay.snapshot(urlHint, targetId);
+  std::cout << out.dump(2) << std::endl;
+  return out.value("ok", false) ? 0 : 1;
+}
+
+int runBrowserNavigate(const std::string& configPath, const std::vector<std::string>& pos) {
+  if (pos.size() < 3) {
+    std::cerr << "Usage: browser navigate <url> [--target-id <id>]" << std::endl;
+    return 1;
+  }
+  const std::string url = pos[2];
+  const std::string targetId = argValue(pos, "--target-id").value_or("");
+
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  const std::string baseUrl = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
+  const auto remote = httpPostJson(baseUrl + "/api/browser/navigate", json{{"url", url}, {"targetId", targetId}}, authHeaderFromEnv(cfg));
+  if (remote.has_value()) {
+    std::cout << remote->dump(2) << std::endl;
+    return remote->value("ok", false) ? 0 : 1;
+  }
+  clawforge::browser::BrowserRelay relay(cfg.browser);
+  const auto out = relay.navigate(url, targetId);
+  std::cout << out.dump(2) << std::endl;
+  return out.value("ok", false) ? 0 : 1;
+}
+
+int runBrowserClick(const std::string& configPath, const std::vector<std::string>& pos) {
+  if (pos.size() < 3) {
+    std::cerr << "Usage: browser click <ref> [--target-id <id>] [--double]" << std::endl;
+    return 1;
+  }
+
+  const std::string ref = pos[2];
+  const std::string targetId = argValue(pos, "--target-id").value_or("");
+  const bool dbl = hasFlag(pos, "--double");
+
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  const std::string baseUrl = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
+  const auto remote = httpPostJson(baseUrl + "/api/browser/click",
+                                   json{{"ref", ref}, {"targetId", targetId}, {"double", dbl}},
+                                   authHeaderFromEnv(cfg));
+  if (remote.has_value()) { std::cout << remote->dump(2) << std::endl; return remote->value("ok", false) ? 0 : 1; }
+
+  clawforge::browser::BrowserRelay relay(cfg.browser);
+  const auto out = relay.click(ref, targetId, dbl);
+  std::cout << out.dump(2) << std::endl;
+  return out.value("ok", false) ? 0 : 1;
+}
+
+int runBrowserType(const std::string& configPath, const std::vector<std::string>& pos) {
+  if (pos.size() < 4) {
+    std::cerr << "Usage: browser type <ref> <text> [--target-id <id>] [--submit] [--slowly]" << std::endl;
+    return 1;
+  }
+
+  const std::string ref = pos[2];
+  const std::string text = pos[3];
+  const std::string targetId = argValue(pos, "--target-id").value_or("");
+  const bool submit = hasFlag(pos, "--submit");
+  const bool slowly = hasFlag(pos, "--slowly");
+
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  const std::string baseUrl = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
+  const auto remote = httpPostJson(baseUrl + "/api/browser/type",
+                                   json{{"ref", ref}, {"text", text}, {"targetId", targetId},
+                                        {"submit", submit}, {"slowly", slowly}},
+                                   authHeaderFromEnv(cfg));
+  if (remote.has_value()) { std::cout << remote->dump(2) << std::endl; return remote->value("ok", false) ? 0 : 1; }
+
+  clawforge::browser::BrowserRelay relay(cfg.browser);
+  const auto out = relay.type(ref, text, targetId, submit, slowly);
+  std::cout << out.dump(2) << std::endl;
+  return out.value("ok", false) ? 0 : 1;
+}
+
+int runBrowserScreenshot(const std::string& configPath, const std::vector<std::string>& pos) {
+  const std::string targetId = (pos.size() >= 3 && pos[2].rfind("--", 0) != 0) ? pos[2] : "";
+  const bool fullPage = hasFlag(pos, "--full-page");
+  const std::string imgType = argValue(pos, "--type").value_or("png");
+
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  const std::string baseUrl = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
+  const auto remote = httpPostJson(baseUrl + "/api/browser/screenshot",
+                                   json{{"targetId", targetId}, {"fullPage", fullPage}, {"type", imgType}},
+                                   authHeaderFromEnv(cfg));
+  if (remote.has_value()) { std::cout << remote->dump(2) << std::endl; return remote->value("ok", false) ? 0 : 1; }
+
+  clawforge::browser::BrowserRelay relay(cfg.browser);
+  const auto out = relay.screenshot(targetId, fullPage, imgType);
   std::cout << out.dump(2) << std::endl;
   return out.value("ok", false) ? 0 : 1;
 }
@@ -643,6 +1044,53 @@ bool parseTelegramTarget(const std::string& target, json& payload, std::string& 
   return false;
 }
 
+json callTelegramApi(const clawforge::core::AppConfig& cfg, const std::string& method, const json& payload,
+                     const std::string& action, const std::string& target,
+                     bool dryRun = false) {
+  if (dryRun) {
+    return json{{"ok", true},
+                {"dryRun", true},
+                {"action", action},
+                {"channel", "telegram"},
+                {"target", target},
+                {"payload", payload}};
+  }
+
+  const char* token = std::getenv(cfg.telegram.botTokenEnv.c_str());
+  if (!token || std::string(token).empty()) {
+    return json{{"ok", false}, {"error", "Telegram token env is empty"}, {"tokenEnv", cfg.telegram.botTokenEnv}};
+  }
+
+  const std::string url = "https://api.telegram.org/bot" + std::string(token) + "/" + method;
+  const std::string cmd = "curl -sS -X POST " + clawforge::util::Shell::quote(url) +
+                          " -H " + clawforge::util::Shell::quote("Content-Type: application/json") +
+                          " --data " + clawforge::util::Shell::quote(payload.dump());
+  const auto res = clawforge::util::Shell::run(cmd);
+  if (res.exitCode != 0) {
+    return json{{"ok", false},
+                {"error", "telegram request failed"},
+                {"action", action},
+                {"channel", "telegram"},
+                {"target", target},
+                {"details", res.output}};
+  }
+
+  auto parsed = json::parse(res.output, nullptr, false);
+  if (parsed.is_discarded()) {
+    return json{{"ok", false}, {"error", "telegram returned non-json response"}, {"raw", res.output}};
+  }
+
+  if (!parsed.value("ok", false)) {
+    return json{{"ok", false}, {"error", "telegram api error"}, {"response", parsed}};
+  }
+
+  return json{{"ok", true},
+              {"action", action},
+              {"channel", "telegram"},
+              {"target", target},
+              {"response", parsed}};
+}
+
 int runMessageSend(const std::string& configPath, const std::vector<std::string>& pos) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
 
@@ -691,47 +1139,165 @@ int runMessageSend(const std::string& configPath, const std::vector<std::string>
     return 2;
   }
 
-  if (dryRun) {
-    std::cout << json{{"ok", true}, {"dryRun", true}, {"action", "message.send"}, {"channel", channel}, {"target", target}, {"payload", telegramPayload}}.dump(2) << std::endl;
+  const auto result = callTelegramApi(cfg, "sendMessage", telegramPayload, "message.send", target, dryRun);
+  if (result.value("ok", false)) {
+    json out = result;
+    if (out.contains("response") && out["response"].is_object() && out["response"].contains("result") &&
+        out["response"]["result"].is_object()) {
+      out["messageId"] = out["response"]["result"].value("message_id", 0);
+    }
+    std::cout << out.dump(2) << std::endl;
     return 0;
   }
 
-  const char* token = std::getenv(cfg.telegram.botTokenEnv.c_str());
-  if (!token || std::string(token).empty()) {
-    std::cout << json{{"ok", false}, {"error", "Telegram token env is empty"}, {"tokenEnv", cfg.telegram.botTokenEnv}}.dump(2) << std::endl;
+  std::cout << result.dump(2) << std::endl;
+  return 1;
+}
+
+int runMessageDelete(const std::string& configPath, const std::vector<std::string>& pos) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  std::string channel = argValue(pos, "--channel").value_or("");
+  const std::string target = argValue(pos, "--target").value_or("");
+  const std::string messageId = argValue(pos, "--message-id").value_or("");
+  const bool dryRun = hasFlag(pos, "--dry-run");
+
+  if (target.empty() || messageId.empty()) {
+    std::cout << json{{"ok", false}, {"error", "--target and --message-id are required"}}.dump(2) << std::endl;
     return 1;
   }
 
-  const std::string url = "https://api.telegram.org/bot" + std::string(token) + "/sendMessage";
-  const std::string cmd = "curl -sS -X POST " + clawforge::util::Shell::quote(url) +
-                          " -H " + clawforge::util::Shell::quote("Content-Type: application/json") +
-                          " --data " + clawforge::util::Shell::quote(telegramPayload.dump());
-  const auto res = clawforge::util::Shell::run(cmd);
-  if (res.exitCode != 0) {
-    std::cout << json{{"ok", false}, {"error", "telegram send failed"}, {"channel", channel}, {"target", target}, {"details", res.output}}.dump(2) << std::endl;
+  if (channel.empty()) {
+    const auto channels = configuredChannels(cfg);
+    if (channels.size() == 1) channel = channels[0];
+  }
+  if (channel != "telegram") {
+    std::cout << json{{"ok", false}, {"error", "Only --channel telegram is implemented"}, {"channel", channel}}.dump(2)
+              << std::endl;
+    return 2;
+  }
+
+  json payload;
+  std::string err;
+  if (!parseTelegramTarget(target, payload, err)) {
+    std::cout << json{{"ok", false}, {"channel", channel}, {"target", target}, {"error", err}}.dump(2) << std::endl;
     return 1;
   }
 
-  auto parsed = json::parse(res.output, nullptr, false);
-  if (parsed.is_discarded()) {
-    std::cout << json{{"ok", false}, {"error", "telegram returned non-json response"}, {"raw", res.output}}.dump(2) << std::endl;
+  try {
+    payload["message_id"] = std::stoll(messageId);
+  } catch (...) {
+    std::cout << json{{"ok", false}, {"error", "--message-id must be numeric for telegram"}}.dump(2) << std::endl;
     return 1;
   }
 
-  if (!parsed.value("ok", false)) {
-    std::cout << json{{"ok", false}, {"error", "telegram api error"}, {"response", parsed}}.dump(2) << std::endl;
+  const auto result = callTelegramApi(cfg, "deleteMessage", payload, "message.delete", target, dryRun);
+  std::cout << result.dump(2) << std::endl;
+  return result.value("ok", false) ? 0 : 1;
+}
+
+int runMessageReact(const std::string& configPath, const std::vector<std::string>& pos) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  std::string channel = argValue(pos, "--channel").value_or("");
+  const std::string target = argValue(pos, "--target").value_or("");
+  const std::string messageId = argValue(pos, "--message-id").value_or("");
+  const std::string emoji = argValue(pos, "--emoji").value_or("👍");
+  const bool remove = hasFlag(pos, "--remove");
+  const bool dryRun = hasFlag(pos, "--dry-run");
+
+  if (target.empty() || messageId.empty()) {
+    std::cout << json{{"ok", false}, {"error", "--target and --message-id are required"}}.dump(2) << std::endl;
     return 1;
   }
 
-  std::cout << json{{"ok", true},
-                    {"action", "message.send"},
-                    {"channel", channel},
-                    {"target", target},
-                    {"messageId", parsed["result"].value("message_id", 0)},
-                    {"response", parsed}}
-                   .dump(2)
-            << std::endl;
-  return 0;
+  if (channel.empty()) {
+    const auto channels = configuredChannels(cfg);
+    if (channels.size() == 1) channel = channels[0];
+  }
+  if (channel != "telegram") {
+    std::cout << json{{"ok", false}, {"error", "Only --channel telegram is implemented"}, {"channel", channel}}.dump(2)
+              << std::endl;
+    return 2;
+  }
+
+  json payload;
+  std::string err;
+  if (!parseTelegramTarget(target, payload, err)) {
+    std::cout << json{{"ok", false}, {"channel", channel}, {"target", target}, {"error", err}}.dump(2) << std::endl;
+    return 1;
+  }
+
+  try {
+    payload["message_id"] = std::stoll(messageId);
+  } catch (...) {
+    std::cout << json{{"ok", false}, {"error", "--message-id must be numeric for telegram"}}.dump(2) << std::endl;
+    return 1;
+  }
+
+  if (remove) {
+    payload["reaction"] = json::array();
+  } else {
+    payload["reaction"] = json::array({{{"type", "emoji"}, {"emoji", emoji}}});
+  }
+  payload["is_big"] = false;
+
+  const auto result = callTelegramApi(cfg, "setMessageReaction", payload, "message.react", target, dryRun);
+  std::cout << result.dump(2) << std::endl;
+  return result.value("ok", false) ? 0 : 1;
+}
+
+int runMessagePoll(const std::string& configPath, const std::vector<std::string>& pos) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  std::string channel = argValue(pos, "--channel").value_or("");
+  const std::string target = argValue(pos, "--target").value_or("");
+  const std::string question = argValue(pos, "--poll-question").value_or("");
+  const std::vector<std::string> options = argValues(pos, "--poll-option");
+  const bool pollMulti = hasFlag(pos, "--poll-multi");
+  const auto pollHours = argValue(pos, "--poll-duration-hours");
+  const bool dryRun = hasFlag(pos, "--dry-run");
+
+  if (target.empty() || question.empty() || options.size() < 2) {
+    std::cout << json{{"ok", false},
+                      {"error", "--target, --poll-question, and at least two --poll-option are required"}}
+                     .dump(2)
+              << std::endl;
+    return 1;
+  }
+
+  if (channel.empty()) {
+    const auto channels = configuredChannels(cfg);
+    if (channels.size() == 1) channel = channels[0];
+  }
+  if (channel != "telegram") {
+    std::cout << json{{"ok", false}, {"error", "Only --channel telegram is implemented"}, {"channel", channel}}.dump(2)
+              << std::endl;
+    return 2;
+  }
+
+  json payload;
+  std::string err;
+  if (!parseTelegramTarget(target, payload, err)) {
+    std::cout << json{{"ok", false}, {"channel", channel}, {"target", target}, {"error", err}}.dump(2) << std::endl;
+    return 1;
+  }
+
+  payload["question"] = question;
+  payload["options"] = options;
+  payload["allows_multiple_answers"] = pollMulti;
+  payload["is_anonymous"] = false;
+
+  if (pollHours.has_value()) {
+    try {
+      const int hours = std::max(1, std::stoi(*pollHours));
+      payload["close_date"] = static_cast<int>(std::time(nullptr)) + hours * 3600;
+    } catch (...) {
+      std::cout << json{{"ok", false}, {"error", "--poll-duration-hours must be numeric"}}.dump(2) << std::endl;
+      return 1;
+    }
+  }
+
+  const auto result = callTelegramApi(cfg, "sendPoll", payload, "message.poll", target, dryRun);
+  std::cout << result.dump(2) << std::endl;
+  return result.value("ok", false) ? 0 : 1;
 }
 
 int runChannelsAction(const std::string& configPath, const std::vector<std::string>& pos) {
@@ -758,9 +1324,9 @@ int runChannelsAction(const std::string& configPath, const std::vector<std::stri
   if (action == "capabilities") {
     const json caps = {{"send", true},
                        {"read", true},
-                       {"react", false},
-                       {"delete", false},
-                       {"poll", false},
+                       {"react", true},
+                       {"delete", true},
+                       {"poll", true},
                        {"threads", true}};
     std::cout << json{{"ok", true}, {"channel", "telegram"}, {"capabilities", caps}}.dump(2) << std::endl;
     return 0;
@@ -877,7 +1443,7 @@ int runModelsProbe(const std::string& configPath) {
     const bool present = !auth.token.empty();
     checks.push_back({{"provider", name}, {"endpoint", p.endpoint}, {"apiStyle", p.apiStyle}, {"apiKeyEnv", p.apiKeyEnv},
                       {"keyPresent", present}, {"authSource", auth.source}, {"authMode", auth.mode}, {"profileId", auth.profileId},
-                      {"expiresAt", auth.expiresAt}, {"expired", auth.expired}, {"warnings", auth.warnings}});
+                      {"expiresAt", auth.expiresAt}, {"expired", auth.expired}, {"refreshed", auth.refreshed}, {"warnings", auth.warnings}});
     if (!present) ok = false;
   }
   std::cout << json{{"ok", ok}, {"current", cfg.modelRouting.current}, {"checks", checks}, {"note", "No token-spending remote calls executed"}}.dump(2) << std::endl;
@@ -1332,7 +1898,11 @@ int main(int argc, char** argv) {
 
     if (command == "browser" && pos.size() >= 2 && pos[1] == "status") return runBrowserStatus(configPath);
     if (command == "browser" && pos.size() >= 3 && pos[1] == "open") return runBrowserOpen(configPath, pos[2]);
-    if (command == "browser" && pos.size() >= 2 && pos[1] == "snapshot") return runBrowserSnapshot(configPath, pos.size() >= 3 ? pos[2] : "");
+    if (command == "browser" && pos.size() >= 3 && pos[1] == "navigate") return runBrowserNavigate(configPath, pos);
+    if (command == "browser" && pos.size() >= 2 && pos[1] == "snapshot") return runBrowserSnapshot(configPath, pos);
+    if (command == "browser" && pos.size() >= 3 && pos[1] == "click") return runBrowserClick(configPath, pos);
+    if (command == "browser" && pos.size() >= 4 && pos[1] == "type") return runBrowserType(configPath, pos);
+    if (command == "browser" && pos.size() >= 2 && pos[1] == "screenshot") return runBrowserScreenshot(configPath, pos);
     if (command == "cron" && pos.size() >= 2 && pos[1] == "status") return runCronAction(configPath, "status");
     if (command == "cron" && pos.size() >= 2 && pos[1] == "list") return runCronAction(configPath, "list");
     if (command == "cron" && pos.size() >= 2 && pos[1] == "add") {
@@ -1364,6 +1934,9 @@ int main(int argc, char** argv) {
 
     if (command == "message") {
       if (pos.size() >= 2 && pos[1] == "send") return runMessageSend(configPath, pos);
+      if (pos.size() >= 2 && pos[1] == "react") return runMessageReact(configPath, pos);
+      if (pos.size() >= 2 && pos[1] == "delete") return runMessageDelete(configPath, pos);
+      if (pos.size() >= 2 && pos[1] == "poll") return runMessagePoll(configPath, pos);
       return (printCompatNotImplemented("message " + (pos.size() >= 2 ? pos[1] : ""), lang), 2);
     }
 

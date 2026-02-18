@@ -1,4 +1,4 @@
-# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 15)
+# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 16)
 
 Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
@@ -18,15 +18,15 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `sessions` | list/show/ops | partial | `nexaclaw sessions` list baseline |
 | `cron` | status/list/add/edit/enable/disable/run/runs/validate/rm | partial | Stage 14 semantic baseline (sessionTarget/payload/delivery/wakeMode + run history), still not full OpenClaw delivery ecosystem |
 | `tools` | list/call | implemented | `tools list`, `tools call <name> --json <payload>` |
-| `browser` | status/open/snapshot/... | partial | `status|open|snapshot` implemented; snapshot still diagnostic baseline |
+| `browser` | status/open/snapshot/... | partial | Stage 16 baseline: `status|open|navigate|snapshot|click|type|screenshot` via `openclaw_cli` backend bridge |
 | `config` | get/set | partial | expanded key coverage, not full OpenClaw config surface |
-| `models` | list/status/set/aliases/fallbacks/probe/auth | implemented | plus `set-image`, auth profiles |
+| `models` | list/status/set/aliases/fallbacks/probe/auth | implemented | plus `set-image`, auth profiles, `auth login` import bridge, `auth order` |
 | `image-fallbacks` | list/add/remove/clear | implemented | added as baseline config ops |
 | `logs` | tail/... | partial | `logs tail [lines]` (audit file tail) |
 | `system` | event/... | partial | `system event <text>` baseline enqueue path |
 | `pairing` | list/approve/... | partial | `list`, `approve` |
 | `gateway` | status/start/stop/restart/call | partial | `status|start|stop|restart|health|call` baseline (local pid/log + RPC-like `gateway call`) |
-| `message` | send/... | partial | `message send` baseline for telegram with strict target validation + dry-run |
+| `message` | send/... | partial | Stage 16 baseline: telegram `send|react|delete|poll` with strict target validation + dry-run |
 | `agent` | manage/ops | stub | not mapped yet |
 | `agents` | manage/ops | stub | not mapped yet |
 | `acp` | protocol tooling | impossible-now | requires ACP ecosystem parity |
@@ -58,10 +58,15 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
 ## Key subcommand parity details
 
-### Browser
+### Browser (Stage 16 baseline)
 - `browser status` — **implemented**
 - `browser open <url>` — **implemented**
-- `browser snapshot [urlHint]` — **partial** (currently diagnostic/baseline in backend)
+- `browser navigate <url>` — **implemented**
+- `browser snapshot [urlHint]` — **implemented baseline** (AI snapshot via `openclaw_cli` backend)
+- `browser click <ref>` — **implemented baseline**
+- `browser type <ref> <text>` — **implemented baseline**
+- `browser screenshot [targetId]` — **implemented baseline**
+- limitation: powered by OpenClaw CLI bridge (`browser.backend=openclaw_cli`), not native NexaClaw CDP runtime yet
 
 ### Cron (Stage 14 semantic baseline)
 - `cron status` — **implemented**
@@ -76,11 +81,14 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - contract checks implemented: `main->systemEvent`, `isolated->agentTurn`
 - default isolated `delivery.mode=announce`; retry backoff ladder after recurring errors
 
-### Message (Stage 15 baseline)
+### Message (Stage 16 baseline)
 - `message send --channel telegram --target <...> --message <...>` — **implemented baseline**
+- `message react --channel telegram --target <...> --message-id <id> --emoji <...>` — **implemented baseline**
+- `message delete --channel telegram --target <...> --message-id <id>` — **implemented baseline**
+- `message poll --channel telegram --target <...> --poll-question <...> --poll-option ...` — **implemented baseline**
 - strict telegram target validation (`@username`, `chatId`, `chatId:topic:threadId`)
-- `--dry-run` supported for safe validation
-- non-telegram channels/actions still roadmap
+- `--dry-run` supported for safe validation across actions
+- non-telegram channels are still roadmap
 
 ### Channels (Stage 15 baseline)
 - `channels list` / `channels status` — **implemented baseline**
@@ -100,7 +108,9 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - `models list|status|set|aliases|fallbacks` — **implemented**
 - `models probe` — **implemented** (shows auth source env/profile, no token-spend calls)
 - `models set-image` — **implemented** (config op baseline)
-- `models auth list|add|paste-token|setup-token|use|remove` — **implemented baseline** (local token store, manual OAuth token helper)
+- `models auth list|add|paste-token|setup-token|login|use|remove` — **implemented baseline**
+- `models auth order get|set|clear` — **implemented baseline**
+- login note: current `models auth login --provider openai-codex` uses OpenClaw login bridge + import to NexaClaw auth store
 - `image-fallbacks list|add|remove|clear` — **implemented**
 
 ### Logs/System
@@ -123,15 +133,14 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - non-interactive mode via `--non-interactive` / `--yes`
 - safe defaults preset (dmScope + auth token env + telegram dmPolicy)
 
-## Stage 15 summary
-- Focus for this sprint: message/channels baseline on top of Stage 14 cron semantics.
-- Added strict telegram send path and channel-management baseline commands.
-- Where full OpenClaw feature equivalence is impossible now, NexaClaw returns explicit baseline diagnostics instead of silent gaps.
-
+## Stage 16 summary
+- Focus for this sprint: close three heavy practical gaps — browser actions, OAuth login bridge/import, and message action surface.
+- Added `openclaw_cli` browser backend bridge (`navigate/click/type/screenshot`), `models auth login` + `auth order`, and telegram `message react/delete/poll` baseline.
+- Where full OpenClaw feature equivalence is still impossible now, NexaClaw returns explicit diagnostics and scope limits instead of silent gaps.
 
 ### OAuth parity note
-- `models auth setup-token --provider openai-codex` is a **manual token setup baseline**.
-- Device-code OAuth flow is not implemented yet; CLI prints an explicit warning and stores only user-provided token.
+- `models auth login --provider openai-codex` now exists as a practical baseline via OpenClaw login/import bridge.
+- Native NexaClaw device-code OAuth runtime is still not implemented (next gap).
 
 ### Installer parity note
 - Added `scripts/install.sh` one-command installer (clone/update/build/install).

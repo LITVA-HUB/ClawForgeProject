@@ -39,15 +39,15 @@ Audit date: 2026-02-18
 ---
 
 ## 2) Message/channel action parity
-**Current:** Stage 15 baseline landed for `message send` + `channels` management.
+**Current:** Stage 16 baseline landed for telegram action surface.
 
 **What landed:**
-- `nexaclaw message send --channel telegram --target <...> --message <...> [--dry-run]`
+- `nexaclaw message send|react|delete|poll --channel telegram ... [--dry-run]`
 - strict telegram target validation (no silent ambiguity)
 - `channels list/status/capabilities/resolve/add/remove` baseline for telegram
 
 **Remaining gap:**
-- action expansion (`react/delete/poll/thread` family)
+- thread/advanced action families
 - non-telegram provider parity and target normalization across ecosystems
 
 ---
@@ -68,26 +68,29 @@ Audit date: 2026-02-18
 ---
 
 ## 4) Model auth parity (real OAuth flow)
-**Gap:** Stage 11 provides manual token storage; no true device-code OAuth flow.
+**Current:** Stage 16 added practical OAuth login import bridge + profile order controls.
 
-**Why critical:** user-facing auth parity (especially codex/oauth-like UX) is explicitly requested.
+**What landed:**
+- `models auth login --provider openai-codex` (delegates to OpenClaw login then imports token)
+- `models auth order get|set|clear`
+- resolver priority supports active + ordered profiles before env fallback
 
-**Minimum target:**
-- Device-code login flow (start/poll/complete)
-- Expiry handling + refresh path where provider supports it
-- Profile order/priority controls (`auth order get/set/clear` baseline)
+**Remaining critical gap:**
+- native NexaClaw device-code runtime (start/poll/complete) without external OpenClaw dependency
+- refresh lifecycle parity owned inside NexaClaw runtime
 
 ---
 
 ## 5) Browser backend parity
-**Gap:** browser snapshot/actions remain diagnostic stub.
+**Current:** Stage 16 added practical browser action baseline via `openclaw_cli` backend bridge.
 
-**Why critical:** OpenClaw browser tooling is major differentiator for automation tasks.
+**What landed:**
+- `status/open/navigate/snapshot/click/type/screenshot` paths in NexaClaw CLI/API
+- operational snapshots with actionable refs
 
-**Minimum target:**
-- Real backend (Playwright/CDP)
-- `snapshot` with stable refs
-- At least `open/click/type/navigate/screenshot` end-to-end operationally
+**Remaining critical gap:**
+- native NexaClaw Playwright/CDP backend (no external OpenClaw CLI dependency)
+- fully owned browser lifecycle/parity internals in NexaClaw runtime
 
 ---
 
@@ -129,9 +132,11 @@ Audit date: 2026-02-18
 1. ✅ **Gateway + config apply/patch RPC baseline**
 2. ✅ **Cron semantic parity baseline (`status/edit/enable/disable/runs` + sessionTarget/wakeMode/delivery baseline)**
 3. ✅ **Secure DM/session isolation + `security audit` baseline**
-4. ✅ **Message send baseline + channel target validation**
-5. **OAuth device-code flow for `openai-codex`**
-6. **Browser real backend milestone (Playwright)**
+4. ✅ **Message action baseline + channel target validation**
+5. ✅ **OAuth login import bridge + auth order baseline**
+6. ✅ **Browser action baseline via `openclaw_cli` bridge**
+7. **Native OAuth device-code runtime in NexaClaw**
+8. **Native browser backend milestone (Playwright/CDP) in NexaClaw**
 
 This order maximizes operational control first, then automation reliability + safety, then auth/browser UX.
 

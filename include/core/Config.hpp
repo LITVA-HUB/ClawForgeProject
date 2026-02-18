@@ -67,8 +67,10 @@ struct GatewayConfig {
 
 struct BrowserConfig {
   bool enabled{true};
-  std::string backend{"stub"};     // stub | shell
-  std::string openCommand{"open"}; // shell backend command prefix
+  std::string backend{"stub"};      // stub | shell | openclaw_cli
+  std::string profile{"openclaw"};  // for openclaw_cli backend
+  std::string cliBinary{"openclaw"};
+  std::string openCommand{"open"};  // shell backend command prefix
   int openTimeoutMs{15000};
 };
 

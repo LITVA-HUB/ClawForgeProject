@@ -7,7 +7,7 @@ NexaClaw — это локальный control plane: сессии, tools, cron,
 - 🇬🇧 English README: [README.md](./README.md)
 - Матрица parity: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
 - CLI parity таблица: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
-- Документация по стадиям: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
+- Документация по стадиям: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE16](./docs/STAGE16.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
 
 ---
 
@@ -19,11 +19,11 @@ NexaClaw — это локальный control plane: сессии, tools, cron,
 - Baseline control-plane для gateway: `gateway status|start|stop|restart|health|call`
 - Session store + JSONL-транскрипты
 - Scoped policy для tools (`global` / `channels` / `peers`)
-- Telegram baseline + pairing policy/approve + строгий baseline `message send`
+- Telegram baseline + pairing policy/approve + baseline message actions (`send/react/delete/poll`)
 - Baseline управления каналами: `channels list|status|capabilities|resolve|add|remove` (telegram)
 - Task lane API (`/api/tasks`) с timeout/cancel baseline
 - Security baseline: auth token mode, rate limit по источнику, audit JSONL
-- Browser relay baseline (`status/open`) + честный diagnostic stub для snapshot
+- Browser Stage 16 baseline через `openclaw_cli`: `status/open/navigate/snapshot/click/type/screenshot`
 - RU/EN CLI UX + doctor + smoke/benchmark scripts
 
 ---
@@ -124,7 +124,12 @@ bash scripts/install.sh --validate
 ./build/nexaclaw models fallbacks add openai/gpt-4o-mini --config config/config.json
 ./build/nexaclaw models auth add --provider openai --profile-id work --api-key-env OPENAI_API_KEY --config config/config.json
 ./build/nexaclaw models auth use --provider openai --profile-id work --config config/config.json
+./build/nexaclaw models auth login --provider openai-codex --config config/config.json
+./build/nexaclaw models auth order set --provider openai-codex --profile-id codex-work --profile-id codex-personal --config config/config.json
 ./build/nexaclaw models auth setup-token --provider openai-codex --profile-id codex --token <token> --expires-in 3600 --config config/config.json
+./build/nexaclaw browser navigate https://example.com --config config/config.json
+./build/nexaclaw browser click e6 --config config/config.json
+./build/nexaclaw message react --channel telegram --target @chat --message-id 123 --emoji ✅ --dry-run --config config/config.json
 ./build/nexaclaw config get model.current --config config/config.json
 ./build/nexaclaw config set model.current fast --config config/config.json
 ```
@@ -145,9 +150,9 @@ bash scripts/install.sh --validate
 - `cron status|list|add|edit|enable|disable|run|runs|validate|rm`
 - `tools list|call`
 - `models list|status|set|aliases|fallbacks|probe|set-image`
-- `models auth list|add|paste-token|setup-token|use|remove` (локальное хранилище auth-профилей)
+- `models auth list|add|login|paste-token|setup-token|use|remove` + `models auth order get|set|clear`
 - `image-fallbacks list|add|remove|clear`
-- `browser status|open|snapshot` (snapshot пока baseline/diagnostic)
+- `browser status|open|navigate|snapshot|click|type|screenshot` (Stage 16 baseline через `openclaw_cli`)
 - `config get/set` (расширено покрытие ключей)
 - `logs tail`, `system event`, `pairing list|approve`
 - `message send --channel telegram --target ... --message ...` (baseline со строгой валидацией target)
@@ -243,6 +248,7 @@ scripts/smoke_stage12_gateway_security.sh
 scripts/smoke_stage13_setup_wizard.sh
 scripts/smoke_stage14_cron_semantics.sh
 scripts/smoke_stage15_message_channels.sh
+scripts/smoke_stage16_browser_oauth_message.sh
 
 # строгая сборка (warning == error)
 cmake -S . -B build_warnings -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror'

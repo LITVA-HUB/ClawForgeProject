@@ -25,6 +25,7 @@ struct ResolvedAuth {
   std::string profileId;
   std::string expiresAt;
   bool expired{false};
+  bool refreshed{false};
   std::vector<std::string> warnings;
 };
 
@@ -40,6 +41,9 @@ class AuthProfileStore {
   bool remove(const std::string& profileId);
   bool setActive(const std::string& provider, const std::string& profileId);
   std::optional<std::string> activeProfileId(const std::string& provider) const;
+  std::vector<std::string> orderForProvider(const std::string& provider) const;
+  bool setOrderForProvider(const std::string& provider, const std::vector<std::string>& profileIds);
+  bool clearOrderForProvider(const std::string& provider);
 
   static ResolvedAuth resolveForProvider(const std::filesystem::path& stateDir,
                                          const std::string& provider,

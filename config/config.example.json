@@ -78,6 +78,8 @@
   "browser": {
     "enabled": true,
     "backend": "stub",
+    "profile": "openclaw",
+    "cliBinary": "openclaw",
     "openCommand": "open",
     "openTimeoutMs": 15000
   },

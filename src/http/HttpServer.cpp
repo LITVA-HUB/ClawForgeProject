@@ -143,6 +143,7 @@ void HttpServer::setupRoutes() {
   server_.Get("/api/browser/status", [&](const httplib::Request&, httplib::Response& res) {
     replyJson(res, browser_.status());
   });
+
   server_.Post("/api/browser/open", [&](const httplib::Request& req, httplib::Response& res) {
     const auto body = parseBody(req);
     if (body.is_discarded()) return replyJson(res, {{"ok", false}, {"error", "Invalid JSON"}}, 400);
@@ -150,11 +151,46 @@ void HttpServer::setupRoutes() {
     audit_.write("browser_open", {{"ok", result.value("ok", false)}, {"url", body.value("url", "")}});
     replyJson(res, result, result.value("ok", false) ? 200 : 400);
   });
+
+  server_.Post("/api/browser/navigate", [&](const httplib::Request& req, httplib::Response& res) {
+    const auto body = parseBody(req);
+    if (body.is_discarded()) return replyJson(res, {{"ok", false}, {"error", "Invalid JSON"}}, 400);
+    const auto result = browser_.navigate(body.value("url", ""), body.value("targetId", ""));
+    audit_.write("browser_navigate", {{"ok", result.value("ok", false)}, {"url", body.value("url", "")}, {"targetId", body.value("targetId", "")}});
+    replyJson(res, result, result.value("ok", false) ? 200 : 400);
+  });
+
   server_.Post("/api/browser/snapshot", [&](const httplib::Request& req, httplib::Response& res) {
     const auto body = parseBody(req);
     if (body.is_discarded()) return replyJson(res, {{"ok", false}, {"error", "Invalid JSON"}}, 400);
-    const auto result = browser_.snapshot(body.value("url", ""));
+    const auto result = browser_.snapshot(body.value("url", ""), body.value("targetId", ""));
+    audit_.write("browser_snapshot", {{"ok", result.value("ok", false)}, {"url", body.value("url", "")}, {"targetId", body.value("targetId", "")}});
     replyJson(res, result, result.value("ok", false) ? 200 : 501);
+  });
+
+  server_.Post("/api/browser/click", [&](const httplib::Request& req, httplib::Response& res) {
+    const auto body = parseBody(req);
+    if (body.is_discarded()) return replyJson(res, {{"ok", false}, {"error", "Invalid JSON"}}, 400);
+    const auto result = browser_.click(body.value("ref", ""), body.value("targetId", ""), body.value("double", false));
+    audit_.write("browser_click", {{"ok", result.value("ok", false)}, {"ref", body.value("ref", "")}});
+    replyJson(res, result, result.value("ok", false) ? 200 : 400);
+  });
+
+  server_.Post("/api/browser/type", [&](const httplib::Request& req, httplib::Response& res) {
+    const auto body = parseBody(req);
+    if (body.is_discarded()) return replyJson(res, {{"ok", false}, {"error", "Invalid JSON"}}, 400);
+    const auto result = browser_.type(body.value("ref", ""), body.value("text", ""), body.value("targetId", ""),
+                                      body.value("submit", false), body.value("slowly", false));
+    audit_.write("browser_type", {{"ok", result.value("ok", false)}, {"ref", body.value("ref", "")}});
+    replyJson(res, result, result.value("ok", false) ? 200 : 400);
+  });
+
+  server_.Post("/api/browser/screenshot", [&](const httplib::Request& req, httplib::Response& res) {
+    const auto body = parseBody(req);
+    if (body.is_discarded()) return replyJson(res, {{"ok", false}, {"error", "Invalid JSON"}}, 400);
+    const auto result = browser_.screenshot(body.value("targetId", ""), body.value("fullPage", false), body.value("type", "png"));
+    audit_.write("browser_screenshot", {{"ok", result.value("ok", false)}});
+    replyJson(res, result, result.value("ok", false) ? 200 : 400);
   });
 
   server_.Post("/api/message", [&](const httplib::Request& req, httplib::Response& res) {

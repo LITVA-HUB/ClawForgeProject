@@ -202,6 +202,8 @@ AppConfig AppConfig::loadFromFile(const std::filesystem::path& path) {
     const auto& b = j["browser"];
     cfg.browser.enabled = b.value("enabled", cfg.browser.enabled);
     cfg.browser.backend = b.value("backend", cfg.browser.backend);
+    cfg.browser.profile = b.value("profile", cfg.browser.profile);
+    cfg.browser.cliBinary = b.value("cliBinary", cfg.browser.cliBinary);
     cfg.browser.openCommand = b.value("openCommand", cfg.browser.openCommand);
     cfg.browser.openTimeoutMs = b.value("openTimeoutMs", cfg.browser.openTimeoutMs);
   }
