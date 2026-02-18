@@ -74,6 +74,8 @@ System-wide install:
 
 ```bash
 bash scripts/install.sh --system
+# update existing installation
+bash scripts/install.sh --update
 ```
 
 Reproducible/pinned install:
@@ -86,10 +88,14 @@ Dry-run (no changes):
 
 ```bash
 bash scripts/install.sh --dry-run
+# validate prerequisites only
+bash scripts/install.sh --validate
 ```
 
 Security notes:
 - Script clones/updates repo, builds with CMake, installs `clawforge` binary.
+- `--update` updates existing clone and re-installs binary.
+- `--validate` checks prerequisites only and does not change the system.
 - Prefer `--pin-commit` for deterministic install.
 - `curl|bash` implies trust in repo owner and transport; inspect script when possible.
 

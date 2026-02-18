@@ -74,6 +74,8 @@ git clone https://github.com/LITVA-HUB/ClawForgeProject.git && cd ClawForgeProje
 
 ```bash
 bash scripts/install.sh --system
+# обновить существующую установку
+bash scripts/install.sh --update
 ```
 
 Детерминированная установка с пином коммита:
@@ -86,10 +88,14 @@ Dry-run (без изменений):
 
 ```bash
 bash scripts/install.sh --dry-run
+# только проверка зависимостей
+bash scripts/install.sh --validate
 ```
 
 Заметки по безопасности:
 - Скрипт клонирует/обновляет репозиторий, собирает через CMake и ставит бинарь `clawforge`.
+- `--update` обновляет существующий клон и переустанавливает бинарь.
+- `--validate` только проверяет зависимости и не вносит изменения.
 - Для воспроизводимости используй `--pin-commit`.
 - `curl|bash` = доверие источнику; по возможности сначала инспектируй скрипт.
 

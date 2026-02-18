@@ -11,4 +11,9 @@ grep -q "\[dry-run\] cmake -S" "$OUT"
 grep -q "\[dry-run\] cmake --build" "$OUT"
 grep -q "Done. Binary:" "$OUT"
 
-echo "Smoke stage11 installer dry-run: OK"
+OUTV=/tmp/clawforge-installer-validate.log
+bash scripts/install.sh --validate >"$OUTV"
+grep -q "Validation OK" "$OUTV"
+grep -q "Validate-only mode: no changes applied" "$OUTV"
+
+echo "Smoke stage11 installer dry-run/validate: OK"

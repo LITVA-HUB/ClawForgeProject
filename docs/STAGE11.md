@@ -43,7 +43,7 @@ Close the parity gap for model authentication beyond plain environment API keys.
 7. **One-command installer**
    - Added `scripts/install.sh` for clone/update + build + install.
    - Targets user install (`~/.local/bin`) by default and system install via `--system`.
-   - Added safety controls: `--dry-run`, `--pin-commit`, explicit script behavior docs.
+   - Added safety controls: `--dry-run`, `--pin-commit`, `--update`, `--validate`, explicit script behavior docs.
 
 ## Known limits (explicit)
 - No real OAuth device-code flow yet.
