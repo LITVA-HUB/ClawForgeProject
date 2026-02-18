@@ -97,3 +97,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 ### OAuth parity note
 - `models auth setup-token --provider openai-codex` is a **manual token setup baseline**.
 - Device-code OAuth flow is not implemented yet; CLI prints an explicit warning and stores only user-provided token.
+
+### Installer parity note
+- Added `scripts/install.sh` one-command installer (clone/update/build/install).
+- Supports `--dry-run`, `--pin-commit`, and `--system` for safer operational usage.

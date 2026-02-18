@@ -56,6 +56,43 @@ curl -s http://127.0.0.1:18890/health
 
 ---
 
+## Установка одной командой
+
+Пользовательская установка (рекомендуется):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LITVA-HUB/ClawForgeProject/main/scripts/install.sh | bash
+```
+
+Более безопасный вариант (сначала посмотреть код):
+
+```bash
+git clone https://github.com/LITVA-HUB/ClawForgeProject.git && cd ClawForgeProject && bash scripts/install.sh
+```
+
+Системная установка:
+
+```bash
+bash scripts/install.sh --system
+```
+
+Детерминированная установка с пином коммита:
+
+```bash
+bash scripts/install.sh --pin-commit <full_sha>
+```
+
+Dry-run (без изменений):
+
+```bash
+bash scripts/install.sh --dry-run
+```
+
+Заметки по безопасности:
+- Скрипт клонирует/обновляет репозиторий, собирает через CMake и ставит бинарь `clawforge`.
+- Для воспроизводимости используй `--pin-commit`.
+- `curl|bash` = доверие источнику; по возможности сначала инспектируй скрипт.
+
 ## CLI шпаргалка
 
 ```bash
@@ -185,6 +222,7 @@ scripts/smoke_stage5.sh
 scripts/smoke_stage6.sh
 scripts/smoke_models_cli.sh
 scripts/smoke_stage11_models_auth.sh
+scripts/smoke_stage11_installer.sh
 
 # строгая сборка (warning == error)
 cmake -S . -B build_warnings -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror'

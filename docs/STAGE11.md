@@ -37,7 +37,13 @@ Close the parity gap for model authentication beyond plain environment API keys.
 
 6. **QA / smoke**
    - Added `scripts/smoke_stage11_models_auth.sh`
-   - Included into `scripts/smoke_full.sh`
+   - Added `scripts/smoke_stage11_installer.sh` (installer dry-run)
+   - Included both into `scripts/smoke_full.sh`
+
+7. **One-command installer**
+   - Added `scripts/install.sh` for clone/update + build + install.
+   - Targets user install (`~/.local/bin`) by default and system install via `--system`.
+   - Added safety controls: `--dry-run`, `--pin-commit`, explicit script behavior docs.
 
 ## Known limits (explicit)
 - No real OAuth device-code flow yet.

@@ -56,6 +56,43 @@ curl -s http://127.0.0.1:18890/health
 
 ---
 
+## One-command install
+
+User install (recommended):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LITVA-HUB/ClawForgeProject/main/scripts/install.sh | bash
+```
+
+Safer variant (inspect first):
+
+```bash
+git clone https://github.com/LITVA-HUB/ClawForgeProject.git && cd ClawForgeProject && bash scripts/install.sh
+```
+
+System-wide install:
+
+```bash
+bash scripts/install.sh --system
+```
+
+Reproducible/pinned install:
+
+```bash
+bash scripts/install.sh --pin-commit <full_sha>
+```
+
+Dry-run (no changes):
+
+```bash
+bash scripts/install.sh --dry-run
+```
+
+Security notes:
+- Script clones/updates repo, builds with CMake, installs `clawforge` binary.
+- Prefer `--pin-commit` for deterministic install.
+- `curl|bash` implies trust in repo owner and transport; inspect script when possible.
+
 ## CLI cheat sheet
 
 ```bash
@@ -185,6 +222,7 @@ scripts/smoke_stage5.sh
 scripts/smoke_stage6.sh
 scripts/smoke_models_cli.sh
 scripts/smoke_stage11_models_auth.sh
+scripts/smoke_stage11_installer.sh
 
 # strict compile gates
 cmake -S . -B build_warnings -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror'
