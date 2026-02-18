@@ -21,13 +21,13 @@ class LlmClient {
 
 class OpenAICompatClient : public LlmClient {
  public:
-  explicit OpenAICompatClient(core::ModelConfig config);
+  explicit OpenAICompatClient(core::AppConfig config);
   std::string complete(const std::vector<ChatMessage>& messages) override;
 
  private:
-  core::ModelConfig config_;
+  core::AppConfig config_;
 };
 
-std::unique_ptr<LlmClient> makeLlmClient(const core::ModelConfig& config);
+std::unique_ptr<LlmClient> makeLlmClient(const core::AppConfig& config);
 
 }  // namespace clawforge::llm

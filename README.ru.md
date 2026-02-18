@@ -6,6 +6,7 @@ ClawForge — это локальный control plane: сессии, tools, cron
 
 - 🇬🇧 English README: [README.md](./README.md)
 - Матрица parity: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
+- CLI parity таблица: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
 - Документация по стадиям: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md)
 
 ---
@@ -65,7 +66,28 @@ curl -s http://127.0.0.1:18890/health
 ./build/clawforge tools list --config config/config.json
 ./build/clawforge pairing list --config config/config.json
 ./build/clawforge pairing approve <code> --config config/config.json
+./build/clawforge models list --config config/config.json
+./build/clawforge models status --config config/config.json
+./build/clawforge models set anthropic/claude-3-5-haiku-latest --config config/config.json
+./build/clawforge models aliases add fast anthropic/claude-3-5-haiku-latest --config config/config.json
+./build/clawforge models fallbacks add openai/gpt-4o-mini --config config/config.json
+./build/clawforge config get model.current --config config/config.json
+./build/clawforge config set model.current fast --config config/config.json
 ```
+
+## Multi-model маршрутизация
+
+`modelsConfig` поддерживает `providers/models/routing`:
+- baseline-провайдеры: `openai`, `anthropic`, `openrouter`, `gemini`, `minimax`
+- routing: `current` + `aliases` + `fallbacks`
+- если API формат провайдера несовместим, ClawForge возвращает честную diagnostic-ошибку.
+
+## OpenClaw CLI compatibility layer
+
+Теперь есть OpenClaw-подобный dispatcher верхнего уровня.
+
+- Реально работает (implemented/partial): `status`, `health`, `sessions`, `cron`, `tools`, `models`, `pairing`, `doctor`, `config get/set`
+- Остальные OpenClaw-ветки возвращают совместимый stub (`not implemented yet`) и ссылку на `docs/CLI_PARITY.md`.
 
 Язык CLI:
 
@@ -139,6 +161,7 @@ scripts/smoke_full.sh
 # stage-focused
 scripts/smoke_stage5.sh
 scripts/smoke_stage6.sh
+scripts/smoke_models_cli.sh
 
 # строгая сборка (warning == error)
 cmake -S . -B build_warnings -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror'

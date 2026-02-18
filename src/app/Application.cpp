@@ -40,7 +40,7 @@ int Application::run() {
   tools::registerBuiltinTools(tools_, config_.workspace);
   tools_.setPolicy(config_.toolsPolicy);
 
-  llm_ = llm::makeLlmClient(config_.model);
+  llm_ = llm::makeLlmClient(config_);
   agent_ = std::make_unique<agent::AgentEngine>(sessions_, tools_, *llm_, config_.model,
                                                  config_.api, eventBus_, config_.gateway.messageQueueTimeoutMs);
 

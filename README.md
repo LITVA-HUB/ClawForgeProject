@@ -6,6 +6,7 @@ ClawForge is built as a local-first control plane: sessions, tools, cron, Telegr
 
 - 🇷🇺 Russian README: [README.ru.md](./README.ru.md)
 - Parity matrix: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
+- CLI parity table: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
 - Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md)
 
 ---
@@ -65,7 +66,28 @@ curl -s http://127.0.0.1:18890/health
 ./build/clawforge tools list --config config/config.json
 ./build/clawforge pairing list --config config/config.json
 ./build/clawforge pairing approve <code> --config config/config.json
+./build/clawforge models list --config config/config.json
+./build/clawforge models status --config config/config.json
+./build/clawforge models set anthropic/claude-3-5-haiku-latest --config config/config.json
+./build/clawforge models aliases add fast anthropic/claude-3-5-haiku-latest --config config/config.json
+./build/clawforge models fallbacks add openai/gpt-4o-mini --config config/config.json
+./build/clawforge config get model.current --config config/config.json
+./build/clawforge config set model.current fast --config config/config.json
 ```
+
+## Multi-model routing
+
+`modelsConfig` supports providers/models/routing:
+- providers baseline: `openai`, `anthropic`, `openrouter`, `gemini`, `minimax`
+- routing: `current` + `aliases` + `fallbacks`
+- if provider API style is not supported, ClawForge returns a diagnostic error with guidance.
+
+## OpenClaw CLI compatibility layer
+
+ClawForge now has an OpenClaw-like top-level dispatcher.
+
+- Implemented/partial branches: `status`, `health`, `sessions`, `cron`, `tools`, `models`, `pairing`, `doctor`, `config get/set`
+- Other OpenClaw branches return compatibility stubs (`not implemented yet`) with a pointer to `docs/CLI_PARITY.md`.
 
 Language:
 
@@ -139,6 +161,7 @@ scripts/smoke_full.sh
 # stage-focused
 scripts/smoke_stage5.sh
 scripts/smoke_stage6.sh
+scripts/smoke_models_cli.sh
 
 # strict compile gates
 cmake -S . -B build_warnings -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror'

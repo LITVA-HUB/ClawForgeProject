@@ -1,16 +1,18 @@
 # PARITY ROADMAP (ClawForge vs OpenClaw)
 
-> Updated after Stage 8.
+> Updated after Stage 9.
 
 ## Practical parity matrix
 
-| Area | OpenClaw | ClawForge (Stage 8) | Status | Notes |
+| Area | OpenClaw | ClawForge (Stage 9) | Status | Notes |
 |---|---|---|---|---|
 | HTTP API `/health`, `/api/message`, `/api/status` | ✅ | ✅ | Closed | Stable local gateway |
 | Session store | ✅ | ✅ | Closed | File-backed sessions |
 | Tools registry + scoped policy | ✅ | ✅ | Closed | global/channel/peer policy |
-| Cron jobs (`every`, `at`, `cron`) | ✅ | ✅ | Closed | validate + run-now + API |
-| CLI UX + doctor | ✅ | ✅ | Closed | RU/EN, doctor expanded |
+| Cron jobs (`every`, `at`, `cron`) | ✅ | ⚠️ | Partial | API complete baseline, CLI `cron list` |
+| CLI UX + doctor | ✅ | ✅ | Closed | RU/EN + compatibility dispatcher |
+| Multi-model providers + aliases + fallbacks | ✅ | ✅ | Closed (baseline) | openai/anthropic/openrouter/gemini/minimax |
+| OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + stubs for not-yet branches |
 | Telegram channel baseline | ✅ | ⚠️ | Partial | polling+pairing, no webhooks/sharding |
 | Browser relay endpoints | ✅ | ⚠️ | Partial | status/open real, snapshot diagnostic stub |
 | Realtime events | ✅ | ✅ | Closed | SSE + EventBus |
@@ -20,10 +22,6 @@
 | Multi-channel plugins (Discord/Slack/Signal/etc) | ✅ | ❌ | Open | Telegram-only baseline |
 | Advanced subagent orchestration | ✅ | ❌ | Open | no external runtime orchestration |
 
-## Why some items remain open
+## Next recommended step
 
-They require heavy external dependencies and runtime integration (browser automation framework, node/device bridges, plugin ecosystem), which are intentionally not bundled into the current minimal C++ core.
-
-## Recommended next big step
-
-Implement a real browser backend (Playwright/CDP) and task-integrated browser sessions; this unlocks the largest user-visible parity jump while reusing current API/task/audit foundations.
+Expand compatibility stubs branch-by-branch (`gateway`, `browser`, `system`, `channels`) into real implementations and add CLI e2e tests for parity-critical flows.

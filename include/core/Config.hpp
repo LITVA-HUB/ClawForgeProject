@@ -89,12 +89,35 @@ struct AuditConfig {
   std::string file{"./state/audit/events.jsonl"};
 };
 
+struct ModelProviderConfig {
+  std::string endpoint;
+  std::string apiKeyEnv;
+  std::string apiStyle{"openai_chat"};  // openai_chat | anthropic_messages | gemini_generate_content
+};
+
+struct ModelEntryConfig {
+  std::string provider;
+  std::string model;
+  std::string endpoint;
+  std::string apiKeyEnv;
+  std::string apiStyle;
+};
+
+struct ModelRoutingConfig {
+  std::string current{"openai/gpt-4o-mini"};
+  std::map<std::string, std::string> aliases;
+  std::vector<std::string> fallbacks;
+};
+
 struct AppConfig {
   std::string name{"clawforge"};
   std::filesystem::path workspace{"./workspace"};
   std::filesystem::path stateDir{"./state"};
   HttpConfig http;
   ModelConfig model;
+  std::map<std::string, ModelProviderConfig> modelProviders;
+  std::map<std::string, ModelEntryConfig> models;
+  ModelRoutingConfig modelRouting;
   TelegramConfig telegram;
   CronConfig cron;
   ApiConfig api;

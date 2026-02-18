@@ -60,6 +60,64 @@ AppConfig AppConfig::loadFromFile(const std::filesystem::path& path) {
     cfg.model.systemPrompt = m.value("systemPrompt", cfg.model.systemPrompt);
   }
 
+  cfg.modelProviders = {
+      {"openai", {"https://api.openai.com/v1/chat/completions", "OPENAI_API_KEY", "openai_chat"}},
+      {"anthropic", {"https://api.anthropic.com/v1/messages", "ANTHROPIC_API_KEY", "anthropic_messages"}},
+      {"openrouter", {"https://openrouter.ai/api/v1/chat/completions", "OPENROUTER_API_KEY", "openai_chat"}},
+      {"gemini", {"https://generativelanguage.googleapis.com/v1beta/models", "GEMINI_API_KEY", "gemini_generate_content"}},
+      {"minimax", {"https://api.minimax.io/v1/text/chatcompletion_v2", "MINIMAX_API_KEY", "openai_chat"}},
+  };
+  cfg.models = {
+      {"openai/gpt-4o-mini", {"openai", "gpt-4o-mini", "", "", ""}},
+      {"anthropic/claude-3-5-haiku-latest", {"anthropic", "claude-3-5-haiku-latest", "", "", ""}},
+      {"openrouter/openai/gpt-4o-mini", {"openrouter", "openai/gpt-4o-mini", "", "", ""}},
+      {"gemini/gemini-1.5-flash", {"gemini", "gemini-1.5-flash", "", "", ""}},
+      {"minimax/abab6.5-chat", {"minimax", "abab6.5-chat", "", "", ""}},
+  };
+  cfg.modelRouting.aliases = {{"default", "openai/gpt-4o-mini"}, {"fast", "openai/gpt-4o-mini"}};
+
+  if (j.contains("modelsConfig") && j["modelsConfig"].is_object()) {
+    const auto& mc = j["modelsConfig"];
+    if (mc.contains("providers") && mc["providers"].is_object()) {
+      cfg.modelProviders.clear();
+      for (auto it = mc["providers"].begin(); it != mc["providers"].end(); ++it) {
+        if (!it.value().is_object()) continue;
+        ModelProviderConfig p;
+        p.endpoint = it.value().value("endpoint", "");
+        p.apiKeyEnv = it.value().value("apiKeyEnv", "");
+        p.apiStyle = it.value().value("apiStyle", p.apiStyle);
+        cfg.modelProviders[it.key()] = std::move(p);
+      }
+    }
+    if (mc.contains("models") && mc["models"].is_object()) {
+      cfg.models.clear();
+      for (auto it = mc["models"].begin(); it != mc["models"].end(); ++it) {
+        if (!it.value().is_object()) continue;
+        ModelEntryConfig m;
+        m.provider = it.value().value("provider", "");
+        m.model = it.value().value("model", "");
+        m.endpoint = it.value().value("endpoint", "");
+        m.apiKeyEnv = it.value().value("apiKeyEnv", "");
+        m.apiStyle = it.value().value("apiStyle", "");
+        cfg.models[it.key()] = std::move(m);
+      }
+    }
+    if (mc.contains("routing") && mc["routing"].is_object()) {
+      const auto& r = mc["routing"];
+      cfg.modelRouting.current = r.value("current", cfg.modelRouting.current);
+      if (r.contains("aliases") && r["aliases"].is_object()) {
+        cfg.modelRouting.aliases.clear();
+        for (auto it = r["aliases"].begin(); it != r["aliases"].end(); ++it) {
+          cfg.modelRouting.aliases[it.key()] = it.value().get<std::string>();
+        }
+      }
+      if (r.contains("fallbacks") && r["fallbacks"].is_array()) {
+        cfg.modelRouting.fallbacks.clear();
+        for (const auto& fb : r["fallbacks"]) cfg.modelRouting.fallbacks.push_back(fb.get<std::string>());
+      }
+    }
+  }
+
   if (j.contains("telegram")) {
     const auto& t = j["telegram"];
     cfg.telegram.enabled = t.value("enabled", cfg.telegram.enabled);
