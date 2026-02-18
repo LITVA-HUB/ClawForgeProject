@@ -15,8 +15,8 @@ Audit date: 2026-02-18
 
 - OpenClaw top-level command surface in docs: ~40 commands.
 - NexaClaw currently has:
-  - ~11 top-level commands with real behavior (`status/health/doctor/sessions/cron/tools/browser/config/models/logs/system/pairing` + image-fallbacks)
-  - compatibility stubs for the rest (40/40 top-level names recognized; ~27.5% with real behavior).
+  - ~13 top-level commands with real behavior (`status/health/doctor/sessions/gateway/security/cron/tools/browser/config/models/logs/system/pairing` + image-fallbacks)
+  - compatibility stubs for the rest (40/40 top-level names recognized; practical coverage increased in Stage 12).
 - Practical baseline is strong for local single-agent + Telegram + cron/tools/models routing.
 - Full OpenClaw parity is still blocked by several architectural gaps.
 
@@ -25,14 +25,16 @@ Audit date: 2026-02-18
 ## P0 (critical) — must close for "OpenClaw-like" reality
 
 ## 1) Gateway operations parity (service + RPC)
-**Gap:** `gateway` branch is still stubbed in CLI compatibility mode.
+**Current:** Stage 12 baseline landed (`gateway status|start|stop|restart|health|call`).
+
+**Remaining gap:** still partial versus OpenClaw service/runtime ecosystem.
 
 **Why critical:** OpenClaw treats gateway lifecycle + RPC as the control plane (`gateway status/install/start/stop/restart`, `gateway call`, `config.apply/patch`, `update.run`).
 
-**Minimum target:**
-- `nexaclaw gateway status|start|stop|restart` (local service/process baseline)
-- `nexaclaw gateway call <method> --params <json>`
-- Wire `config.apply` + `config.patch` + restart semantics
+**Next target:**
+- add `gateway install/uninstall` parity baseline (service templates + UX)
+- make `config.apply/config.patch` restart fully in-process and deterministic
+- expand `gateway call` method coverage + explicit error taxonomy
 
 ---
 
@@ -86,14 +88,16 @@ Audit date: 2026-02-18
 ---
 
 ## 6) Secure DM/session isolation + security audit baseline
-**Gap:** no dedicated `security audit` command and no parity for secure DM recommendations (`per-account-channel-peer` class of scopes + risks diagnostics).
+**Current:** Stage 12 baseline landed (`security audit [--deep] [--fix]`) with dmScope/auth/perms checks.
+
+**Remaining gap:** still partial versus OpenClaw secure-DM depth.
 
 **Why critical:** in multi-user inbox setups, weak DM scoping can leak context across users; OpenClaw treats this as a first-class security check.
 
-**Minimum target:**
-- `nexaclaw security audit` baseline checks (DM scope, auth token env, file permissions)
-- Session scope extensions for shared inboxes (`per-account-channel-peer` equivalent)
-- Actionable warnings/fixes in CLI output
+**Next target:**
+- add session scope parity for shared inboxes (`per-account-channel-peer` equivalent)
+- deepen audit checks (multi-sender leakage heuristics, sandbox risk checks, auth profile hygiene)
+- add structured machine-readable `--json` security report for CI
 
 ---
 
@@ -118,9 +122,9 @@ Audit date: 2026-02-18
 
 ## Recommended Stage 12 execution order
 
-1. **Gateway + config apply/patch RPC**
+1. ✅ **Gateway + config apply/patch RPC baseline**
 2. **Cron semantic parity (`status/edit/enable/disable/runs` + sessionTarget/delivery)**
-3. **Secure DM/session isolation + `security audit` baseline**
+3. ✅ **Secure DM/session isolation + `security audit` baseline**
 4. **Message send baseline + channel target validation**
 5. **OAuth device-code flow for `openai-codex`**
 6. **Browser real backend milestone (Playwright)**

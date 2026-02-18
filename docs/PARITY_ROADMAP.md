@@ -1,16 +1,18 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 11.
+> Updated after Stage 12 gateway/security baseline.
 
 ## Practical parity matrix
 
-| Area | OpenClaw | NexaClaw (Stage 11) | Status | Notes |
+| Area | OpenClaw | NexaClaw (Stage 12) | Status | Notes |
 |---|---|---|---|---|
 | HTTP API `/health`, `/api/message`, `/api/status` | ✅ | ✅ | Closed | Stable local gateway |
 | Session store | ✅ | ✅ | Closed | File-backed sessions |
 | Tools registry + scoped policy | ✅ | ✅ | Closed | global/channel/peer policy |
 | Cron jobs (`every`, `at`, `cron`) | ✅ | ✅ | Closed (baseline) | CLI + API (`list/add/rm/run/validate`) |
 | CLI UX + doctor | ✅ | ✅ | Closed | RU/EN + compatibility dispatcher |
+| Gateway control-plane (`gateway status/start/stop/restart/call`) | ✅ | ⚠️ | Partial (Stage 12 baseline) | local pid/log process management + config.get/apply/patch baseline |
+| Security audit (`security audit [--deep] [--fix]`) | ✅ | ⚠️ | Partial (Stage 12 baseline) | dmScope/auth/perms checks + safe fixes |
 | Multi-model providers + aliases + fallbacks | ✅ | ✅ | Closed (baseline) | openai/anthropic/openrouter/gemini/minimax |
 | Models auth parity beyond API keys | ✅ | ⚠️ | Partial (Stage 11 baseline) | local auth profiles + manual OAuth token setup; no device-code flow yet |
 | OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + stubs for not-yet branches |
@@ -27,8 +29,8 @@
 
 Follow the Stage 12 critical path (see `docs/STAGE12_CRITICAL_GAPS.md`):
 
-1. Gateway service/RPC parity (`gateway status|start|stop|restart|call` + config apply/patch)
-2. Cron semantic parity (`status/edit/enable/disable/runs` + sessionTarget/delivery)
-3. Message command baseline (`message send` + strict target validation)
-4. Real OAuth device-code flow (`openai-codex` baseline)
-5. Browser backend upgrade (Playwright/CDP) for non-stub snapshot/actions
+1. Cron semantic parity (`status/edit/enable/disable/runs` + sessionTarget/delivery)
+2. Message command baseline (`message send` + strict target validation)
+3. Real OAuth device-code flow (`openai-codex` baseline)
+4. Browser backend upgrade (Playwright/CDP) for non-stub snapshot/actions)
+5. Channels/agents/security deepening (`channels status/add/remove`, `agents list/add/delete`, deeper security audit)

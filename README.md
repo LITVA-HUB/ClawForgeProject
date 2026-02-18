@@ -7,7 +7,7 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 - 🇷🇺 Russian README: [README.ru.md](./README.ru.md)
 - Parity matrix: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
 - CLI parity table: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
-- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
+- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
 
 ---
 
@@ -16,6 +16,7 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 - HTTP API gateway: `/health`, `/api/status`, `/api/message`, `/api/inbound`, `/api/tools`, `/api/sessions`
 - Realtime SSE stream: `/api/events/stream`
 - Cron engine: `every` / `at` / `cron` + validate + run-now
+- Gateway control-plane baseline: `gateway status|start|stop|restart|health|call`
 - Session store + JSONL transcripts
 - Scoped tools policy (`global` / `channels` / `peers`)
 - Telegram baseline + pairing policy/approvals

@@ -22,7 +22,7 @@ using json = nlohmann::json;
 namespace {
 
 std::filesystem::path writeTempJson(const json& payload) {
-  char tmpl[] = "/tmp/clawforge-payload-XXXXXX.json";
+  char tmpl[] = "/tmp/nexaclaw-payload-XXXXXX.json";
   const int fd = mkstemps(tmpl, 5);
   if (fd < 0) throw std::runtime_error("Cannot create temp payload file");
   close(fd);

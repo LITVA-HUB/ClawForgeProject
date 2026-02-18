@@ -1,4 +1,4 @@
-# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 11)
+# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 12)
 
 Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
@@ -25,7 +25,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `logs` | tail/... | partial | `logs tail [lines]` (audit file tail) |
 | `system` | event/... | partial | `system event <text>` baseline enqueue path |
 | `pairing` | list/approve/... | partial | `list`, `approve` |
-| `gateway` | status/start/stop/restart/... | stub | not mapped yet |
+| `gateway` | status/start/stop/restart/call | partial | `status|start|stop|restart|health|call` baseline (local pid/log + RPC-like `gateway call`) |
 | `message` | send/... | stub | not mapped yet |
 | `agent` | manage/ops | stub | not mapped yet |
 | `agents` | manage/ops | stub | not mapped yet |
@@ -45,7 +45,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `plugins` | plugin ops | stub | not mapped yet |
 | `reset` | reset ops | stub | not mapped yet |
 | `sandbox` | sandbox ops | stub | not mapped yet |
-| `security` | security policies | stub | not mapped yet |
+| `security` | security audit | partial | `security audit [--deep] [--fix]` baseline checks (dm scope, auth env, perms) |
 | `setup` | setup flow | stub | not mapped yet |
 | `skills` | skills mgmt | stub | not mapped yet |
 | `tui` | terminal UI | impossible-now | no TUI subsystem |
@@ -89,8 +89,18 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - `logs tail [lines]` — **implemented** (audit file tail)
 - `system event <text>` — **implemented** (API path when available, local fallback to main session system message)
 
-## Stage 11 summary
-- Focus for this sprint: deep practical parity on frequently-used operational CLI branches.
+### Gateway (Stage 12 baseline)
+- `gateway status|start|stop|restart|health` — **partial** (single-host local process baseline with pid/log files)
+- `gateway call config.get|config.apply|config.patch` — **partial** (local RPC-like flow + config hash guard + validation)
+- `gateway call update.run` — explicit `not implemented yet`
+
+### Security (Stage 12 baseline)
+- `security audit` — **partial**
+- checks: DM scope risk, gateway auth env presence, config/state permissions
+- `security audit --fix` applies safe baseline remediations (dmScope + perms)
+
+## Stage 12 summary
+- Focus for this sprint: close P0 operational gaps (gateway control-plane + security audit baseline).
 - Where full OpenClaw feature equivalence is impossible now, NexaClaw returns explicit baseline diagnostics instead of silent gaps.
 
 

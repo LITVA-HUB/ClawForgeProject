@@ -136,7 +136,7 @@ std::string AgentEngine::handleMessage(const std::string& sessionKey, const std:
 std::string AgentEngine::handleCommand(const std::string& sessionKey, const std::string& text) {
   if (text == "/status") {
     const auto sessions = sessions_.listSessions();
-    return "ClawForge OK. Sessions: " + std::to_string(sessions.size());
+    return "NexaClaw OK. Sessions: " + std::to_string(sessions.size());
   }
 
   if (text.rfind("/tool ", 0) == 0) {

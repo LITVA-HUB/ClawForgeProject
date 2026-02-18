@@ -78,7 +78,7 @@ bool TelegramBot::allowedUser(long long userId, long long chatId, const std::str
       return true;
     }
     const auto req = pairingStore_.ensurePending(userId, chatId, username, firstName);
-    denyReason = "Pairing required. Ask admin to run: ./build/clawforge pairing approve " +
+    denyReason = "Pairing required. Ask admin to run: ./build/nexaclaw pairing approve " +
                  req.code + " (code: " + req.code + ")";
     return false;
   }

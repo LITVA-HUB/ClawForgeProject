@@ -1,5 +1,7 @@
 #include <csignal>
 #include <cctype>
+#include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -7,6 +9,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -22,6 +25,7 @@
 #include "session/SessionStore.hpp"
 #include "tools/BuiltinTools.hpp"
 #include "tools/ToolRegistry.hpp"
+#include "util/FileUtil.hpp"
 #include "util/Shell.hpp"
 
 namespace {
@@ -54,6 +58,99 @@ std::optional<json> httpDeleteJson(const std::string& url, const std::string& au
 json loadJsonFile(const std::string& path) { std::ifstream in(path); if (!in) throw std::runtime_error("Cannot open config file: " + path); json j; in >> j; return j; }
 void saveJsonFile(const std::string& path, const json& j) { std::ofstream out(path, std::ios::trunc); if (!out) throw std::runtime_error("Cannot write config file: " + path); out << j.dump(2) << "\n"; }
 
+std::string hashText(const std::string& text) {
+  const auto h = static_cast<unsigned long long>(std::hash<std::string>{}(text));
+  char buf[32];
+  std::snprintf(buf, sizeof(buf), "%016llx", h);
+  return std::string(buf);
+}
+
+std::string jsonHash(const json& j) { return hashText(j.dump()); }
+
+bool isLoopbackHost(const std::string& host) {
+  return host == "127.0.0.1" || host == "localhost" || host == "::1";
+}
+
+bool hasEnvToken(const std::string& envName) {
+  const char* v = std::getenv(envName.c_str());
+  return v && std::string(v).size() > 0;
+}
+
+bool permsTooOpen(const std::filesystem::path& path) {
+  if (!std::filesystem::exists(path)) return false;
+  const auto perms = std::filesystem::status(path).permissions();
+  using P = std::filesystem::perms;
+  const bool groupAny = (perms & (P::group_read | P::group_write | P::group_exec)) != P::none;
+  const bool otherAny = (perms & (P::others_read | P::others_write | P::others_exec)) != P::none;
+  return groupAny || otherAny;
+}
+
+void tightenPermsOwnerOnly(const std::filesystem::path& path) {
+  if (!std::filesystem::exists(path)) return;
+  std::error_code ec;
+  const bool isDir = std::filesystem::is_directory(path, ec);
+  const auto wanted = isDir
+                          ? (std::filesystem::perms::owner_all)
+                          : (std::filesystem::perms::owner_read | std::filesystem::perms::owner_write);
+  std::filesystem::permissions(path, wanted, std::filesystem::perm_options::replace, ec);
+}
+
+json mergePatch(json target, const json& patch) {
+  if (!patch.is_object()) return patch;
+  if (!target.is_object()) target = json::object();
+  for (auto it = patch.begin(); it != patch.end(); ++it) {
+    if (it.value().is_null()) {
+      target.erase(it.key());
+    } else {
+      target[it.key()] = mergePatch(target.contains(it.key()) ? target[it.key()] : json(), it.value());
+    }
+  }
+  return target;
+}
+
+bool validateConfigJson(const json& candidate, std::string& error) {
+  const auto nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count();
+  const auto tmp = std::filesystem::temp_directory_path() / ("nexaclaw-validate-" + std::to_string(nowNs) + ".json");
+  try {
+    saveJsonFile(tmp.string(), candidate);
+    auto cfg = clawforge::core::AppConfig::loadFromFile(tmp);
+    (void)cfg;
+    std::error_code ec;
+    std::filesystem::remove(tmp, ec);
+    return true;
+  } catch (const std::exception& e) {
+    error = e.what();
+    std::error_code ec;
+    std::filesystem::remove(tmp, ec);
+    return false;
+  }
+}
+
+std::filesystem::path gatewayPidFile(const clawforge::core::AppConfig& cfg) {
+  return cfg.stateDir / "gateway" / "gateway.pid";
+}
+
+std::filesystem::path gatewayLogFile(const clawforge::core::AppConfig& cfg) {
+  return cfg.stateDir / "logs" / "gateway.log";
+}
+
+std::optional<std::string> readPidFile(const std::filesystem::path& pidFile) {
+  if (!std::filesystem::exists(pidFile)) return std::nullopt;
+  std::ifstream in(pidFile);
+  if (!in) return std::nullopt;
+  std::string pid;
+  in >> pid;
+  if (pid.empty()) return std::nullopt;
+  return pid;
+}
+
+bool pidRunning(const std::string& pid) {
+  if (pid.empty()) return false;
+  const auto probe = clawforge::util::Shell::run("kill -0 " + clawforge::util::Shell::quote(pid) + " >/dev/null 2>&1");
+  return probe.exitCode == 0;
+}
+
 void printCompatNotImplemented(const std::string& cmd, const std::string& lang) {
   std::cout << (lang == "ru" ? "Команда совместимости OpenClaw пока не реализована: " : "OpenClaw compatibility command is not implemented yet: ")
             << cmd << "\n" << (lang == "ru" ? "Смотри docs/CLI_PARITY.md" : "See docs/CLI_PARITY.md") << std::endl;
@@ -64,10 +161,15 @@ std::optional<std::string> argValue(const std::vector<std::string>& pos, const s
   return std::nullopt;
 }
 
+bool hasFlag(const std::vector<std::string>& pos, const std::string& flag) {
+  for (const auto& x : pos) if (x == flag) return true;
+  return false;
+}
+
 void printHelp(const std::string& lang) {
   const bool ru = (lang == "ru");
   std::cout << (ru ? "NexaClaw CLI (alias: clawforge)\n\n" : "NexaClaw CLI (alias: clawforge)\n\n");
-  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw cron list\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|paste-token|setup-token|use|remove\n";
+  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw gateway status|start|stop|restart|call\n  nexaclaw security audit [--deep] [--fix]\n  nexaclaw cron list\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|paste-token|setup-token|use|remove\n";
   std::cout << (ru ? "\nСовместимость OpenClaw: неизвестные top-level ветки отдаются как compatibility stub вместо unknown (см. docs/CLI_PARITY.md).\n"
                    : "\nOpenClaw compatibility: unknown top-level branches return compatibility stubs instead of hard unknown (see docs/CLI_PARITY.md).\n");
 }
@@ -416,6 +518,257 @@ int runLogsTail(const std::string& configPath, int lines) {
   return 0;
 }
 
+json gatewayStatusPayload(const clawforge::core::AppConfig& cfg) {
+  const std::string base = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
+  const auto health = httpGetJson(base + "/health", authHeaderFromEnv(cfg));
+  const auto status = httpGetJson(base + "/api/status", authHeaderFromEnv(cfg));
+  const auto pidFile = gatewayPidFile(cfg);
+  const auto logFile = gatewayLogFile(cfg);
+  const auto pid = readPidFile(pidFile);
+  const bool pidAlive = pid.has_value() && pidRunning(*pid);
+  const bool reachable = health.has_value() && health->value("ok", false);
+  return {
+      {"ok", true},
+      {"reachable", reachable},
+      {"running", reachable || pidAlive},
+      {"pid", pid.value_or("")},
+      {"pidAlive", pidAlive},
+      {"pidFile", pidFile.string()},
+      {"logFile", logFile.string()},
+      {"url", base},
+      {"status", status.has_value() ? *status : json::object()},
+  };
+}
+
+int runGatewayStatus(const std::string& configPath) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  std::cout << gatewayStatusPayload(cfg).dump(2) << std::endl;
+  return 0;
+}
+
+int runGatewayStart(const std::string& configPath, const std::string& programPath) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  auto before = gatewayStatusPayload(cfg);
+  if (before.value("running", false)) {
+    before["note"] = "already running";
+    std::cout << before.dump(2) << std::endl;
+    return 0;
+  }
+
+  const auto pidFile = gatewayPidFile(cfg);
+  const auto logFile = gatewayLogFile(cfg);
+  clawforge::util::FileUtil::ensureDir(pidFile.parent_path());
+  clawforge::util::FileUtil::ensureDir(logFile.parent_path());
+
+  std::string binary = programPath;
+  if (binary.empty()) binary = "./build/nexaclaw";
+  const std::string cmd =
+      "nohup " + clawforge::util::Shell::quote(binary) +
+      " run --config " + clawforge::util::Shell::quote(configPath) +
+      " > " + clawforge::util::Shell::quote(logFile.string()) +
+      " 2>&1 & echo $! > " + clawforge::util::Shell::quote(pidFile.string());
+  const auto res = clawforge::util::Shell::run(cmd);
+  if (res.exitCode != 0) {
+    std::cout << json{{"ok", false}, {"error", "failed to start gateway process"}, {"details", res.output}}.dump(2) << std::endl;
+    return 1;
+  }
+
+  bool up = false;
+  for (int i = 0; i < 20; ++i) {
+    auto st = gatewayStatusPayload(cfg);
+    if (st.value("reachable", false)) { up = true; break; }
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  }
+
+  auto out = gatewayStatusPayload(cfg);
+  out["started"] = true;
+  out["ok"] = up || out.value("pidAlive", false);
+  std::cout << out.dump(2) << std::endl;
+  return out.value("ok", false) ? 0 : 1;
+}
+
+int runGatewayStop(const std::string& configPath) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  const auto pidFile = gatewayPidFile(cfg);
+  const auto pid = readPidFile(pidFile);
+  if (!pid.has_value()) {
+    auto out = gatewayStatusPayload(cfg);
+    out["ok"] = true;
+    out["stopped"] = false;
+    out["note"] = "no pid file";
+    std::cout << out.dump(2) << std::endl;
+    return 0;
+  }
+
+  clawforge::util::Shell::run("kill " + clawforge::util::Shell::quote(*pid) + " >/dev/null 2>&1");
+  bool alive = true;
+  for (int i = 0; i < 20; ++i) {
+    alive = pidRunning(*pid);
+    if (!alive) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+
+  std::error_code ec;
+  std::filesystem::remove(pidFile, ec);
+  auto out = gatewayStatusPayload(cfg);
+  out["stopped"] = !alive;
+  out["ok"] = !alive;
+  out["killedPid"] = *pid;
+  std::cout << out.dump(2) << std::endl;
+  return alive ? 1 : 0;
+}
+
+int runGatewayRestart(const std::string& configPath, const std::string& programPath) {
+  const int stopRc = runGatewayStop(configPath);
+  const int startRc = runGatewayStart(configPath, programPath);
+  return (stopRc == 0 && startRc == 0) ? 0 : 1;
+}
+
+int runGatewayCall(const std::string& configPath, const std::vector<std::string>& pos) {
+  if (pos.size() < 3) {
+    std::cerr << "Usage: nexaclaw gateway call <method> [--params <json>]" << std::endl;
+    return 1;
+  }
+
+  const std::string method = pos[2];
+  const std::string paramsRaw = argValue(pos, "--params").value_or("{}");
+  auto params = json::parse(paramsRaw, nullptr, false);
+  if (params.is_discarded()) {
+    std::cout << json{{"ok", false}, {"error", "invalid --params json"}}.dump(2) << std::endl;
+    return 1;
+  }
+
+  if (method == "health") return runHealth(configPath);
+  if (method == "status") return runStatus(configPath, "en");
+
+  if (method == "config.get") {
+    const auto raw = clawforge::util::FileUtil::readText(configPath).value_or("{}");
+    auto parsed = json::parse(raw, nullptr, false);
+    if (parsed.is_discarded()) parsed = json::object();
+    std::cout << json{{"ok", true}, {"payload", {{"path", configPath}, {"hash", jsonHash(parsed)}, {"raw", raw}}}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (method == "config.apply" || method == "config.patch") {
+    const std::string raw = params.value("raw", "");
+    const std::string baseHash = params.value("baseHash", "");
+    if (raw.empty()) {
+      std::cout << json{{"ok", false}, {"error", "raw is required"}}.dump(2) << std::endl;
+      return 1;
+    }
+
+    json current = loadJsonFile(configPath);
+    const std::string currentHash = jsonHash(current);
+    if (!baseHash.empty() && baseHash != currentHash) {
+      std::cout << json{{"ok", false}, {"error", "baseHash mismatch"}, {"currentHash", currentHash}}.dump(2) << std::endl;
+      return 1;
+    }
+
+    auto incoming = json::parse(raw, nullptr, false);
+    if (incoming.is_discarded()) {
+      std::cout << json{{"ok", false}, {"error", "raw must be valid JSON"}}.dump(2) << std::endl;
+      return 1;
+    }
+
+    json next = (method == "config.apply") ? incoming : mergePatch(current, incoming);
+    std::string validationError;
+    if (!validateConfigJson(next, validationError)) {
+      std::cout << json{{"ok", false}, {"error", "config validation failed"}, {"details", validationError}}.dump(2) << std::endl;
+      return 1;
+    }
+
+    saveJsonFile(configPath, next);
+
+    const auto cfgAfter = clawforge::core::AppConfig::loadFromFile(configPath);
+    const bool running = gatewayStatusPayload(cfgAfter).value("running", false);
+    std::cout << json{{"ok", true},
+                      {"method", method},
+                      {"path", configPath},
+                      {"hash", jsonHash(next)},
+                      {"gatewayRunning", running},
+                      {"note", running ? "Gateway restart recommended" : "Config saved"}}
+                     .dump(2)
+              << std::endl;
+    return 0;
+  }
+
+  if (method == "update.run") {
+    std::cout << json{{"ok", false}, {"error", "update.run is not implemented yet in NexaClaw baseline"}}.dump(2) << std::endl;
+    return 2;
+  }
+
+  std::cout << json{{"ok", false}, {"error", "unsupported gateway call method"}, {"method", method}}.dump(2) << std::endl;
+  return 1;
+}
+
+int runSecurityAudit(const std::string& configPath, const std::vector<std::string>& pos, const std::string& lang) {
+  const bool ru = (lang == "ru");
+  const bool deep = hasFlag(pos, "--deep");
+  const bool fix = hasFlag(pos, "--fix");
+
+  auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  auto conf = loadJsonFile(configPath);
+
+  int warnings = 0;
+  int fails = 0;
+  int fixed = 0;
+  auto report = [&](const std::string& title, const std::string& level, const std::string& details) {
+    std::cout << "[" << level << "] " << title << (details.empty() ? "" : " — " + details) << std::endl;
+  };
+
+  if (cfg.api.dmScope == "main") {
+    ++warnings;
+    if (fix) {
+      conf["api"]["dmScope"] = "per-channel-peer";
+      saveJsonFile(configPath, conf);
+      ++fixed;
+      report(ru ? "Изоляция DM" : "DM isolation", "FIX", ru ? "api.dmScope -> per-channel-peer" : "api.dmScope -> per-channel-peer");
+      cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+    } else {
+      report(ru ? "Изоляция DM" : "DM isolation", "WARN", ru ? "api.dmScope=main (риск смешения контекста)" : "api.dmScope=main (context leakage risk)");
+    }
+  } else {
+    report(ru ? "Изоляция DM" : "DM isolation", "OK", "api.dmScope=" + cfg.api.dmScope);
+  }
+
+  if (cfg.gateway.auth.mode == "token") {
+    if (hasEnvToken(cfg.gateway.auth.tokenEnv)) report("gateway.auth.token", "OK", cfg.gateway.auth.tokenEnv);
+    else { ++fails; report("gateway.auth.token", "FAIL", "missing env: " + cfg.gateway.auth.tokenEnv); }
+  } else {
+    if (!isLoopbackHost(cfg.http.host)) {
+      ++warnings;
+      report("gateway.auth", "WARN", ru ? "auth=off и host не loopback" : "auth=off with non-loopback host");
+    } else {
+      report("gateway.auth", "OK", "mode=off + loopback host");
+    }
+  }
+
+  if (permsTooOpen(configPath)) {
+    ++warnings;
+    if (fix) { tightenPermsOwnerOnly(configPath); ++fixed; report(ru ? "Права config" : "Config permissions", "FIX", configPath); }
+    else report(ru ? "Права config" : "Config permissions", "WARN", ru ? "слишком широкие" : "too open");
+  } else {
+    report(ru ? "Права config" : "Config permissions", "OK", configPath);
+  }
+
+  if (permsTooOpen(cfg.stateDir)) {
+    ++warnings;
+    if (fix) { tightenPermsOwnerOnly(cfg.stateDir); ++fixed; report(ru ? "Права stateDir" : "State dir permissions", "FIX", cfg.stateDir.string()); }
+    else report(ru ? "Права stateDir" : "State dir permissions", "WARN", ru ? "слишком широкие" : "too open");
+  } else {
+    report(ru ? "Права stateDir" : "State dir permissions", "OK", cfg.stateDir.string());
+  }
+
+  if (deep) {
+    const auto health = httpGetJson("http://" + cfg.http.host + ":" + std::to_string(cfg.http.port) + "/health", authHeaderFromEnv(cfg));
+    if (health.has_value() && health->value("ok", false)) report("gateway probe", "OK", "/health reachable");
+    else { ++warnings; report("gateway probe", "WARN", "/health unreachable"); }
+  }
+
+  std::cout << json{{"ok", fails == 0}, {"warnings", warnings}, {"fails", fails}, {"fixed", fixed}}.dump(2) << std::endl;
+  return fails == 0 ? 0 : 1;
+}
+
 int runSystemEvent(const std::string& configPath, const std::string& text) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
   const std::string base = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
@@ -434,6 +787,7 @@ int runSystemEvent(const std::string& configPath, const std::string& text) {
 int main(int argc, char** argv) {
   try {
     std::string command = "run", configPath = "config/config.json", lang = detectLang();
+    const std::string programPath = (argc > 0 && argv && argv[0]) ? std::string(argv[0]) : "nexaclaw";
     std::vector<std::string> args; for (int i = 1; i < argc; ++i) args.emplace_back(argv[i]);
 
     std::vector<std::string> pos;
@@ -454,6 +808,22 @@ int main(int argc, char** argv) {
     if (command == "status") return runStatus(configPath, lang);
     if (command == "health") return runHealth(configPath);
     if (command == "sessions") return runSessions(configPath);
+
+    if (command == "gateway") {
+      if (pos.size() >= 2 && pos[1] == "status") return runGatewayStatus(configPath);
+      if (pos.size() >= 2 && pos[1] == "start") return runGatewayStart(configPath, programPath);
+      if (pos.size() >= 2 && pos[1] == "stop") return runGatewayStop(configPath);
+      if (pos.size() >= 2 && pos[1] == "restart") return runGatewayRestart(configPath, programPath);
+      if (pos.size() >= 2 && pos[1] == "health") return runHealth(configPath);
+      if (pos.size() >= 2 && pos[1] == "call") return runGatewayCall(configPath, pos);
+      return (printCompatNotImplemented("gateway " + (pos.size() >= 2 ? pos[1] : ""), lang), 2);
+    }
+
+    if (command == "security") {
+      if (pos.size() == 1 || (pos.size() >= 2 && pos[1] == "audit")) return runSecurityAudit(configPath, pos, lang);
+      return (printCompatNotImplemented("security " + (pos.size() >= 2 ? pos[1] : ""), lang), 2);
+    }
+
     if (command == "browser" && pos.size() >= 2 && pos[1] == "status") return runBrowserStatus(configPath);
     if (command == "browser" && pos.size() >= 3 && pos[1] == "open") return runBrowserOpen(configPath, pos[2]);
     if (command == "browser" && pos.size() >= 2 && pos[1] == "snapshot") return runBrowserSnapshot(configPath, pos.size() >= 3 ? pos[2] : "");
@@ -500,7 +870,7 @@ int main(int argc, char** argv) {
       std::cerr << "Unknown image-fallbacks subcommand" << std::endl; return 1;
     }
 
-    std::set<std::string> compatTop = {"setup","onboard","configure","dashboard","reset","uninstall","update","message","agent","agents","acp","gateway","memory","nodes","devices","node","approvals","sandbox","dns","docs","hooks","webhooks","plugins","channels","security","skills","tui","voicecall","directory"};
+    std::set<std::string> compatTop = {"setup","onboard","configure","dashboard","reset","uninstall","update","message","agent","agents","acp","memory","nodes","devices","node","approvals","sandbox","dns","docs","hooks","webhooks","plugins","channels","skills","tui","voicecall","directory"};
     if (compatTop.count(command)) return (printCompatNotImplemented(command, lang), 2);
 
     if (command != "run") {

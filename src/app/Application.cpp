@@ -18,7 +18,7 @@ Application::Application(core::AppConfig config, std::string uiLang)
 int Application::run() {
   const bool ru = (uiLang_ == "ru");
   core::Logger::info(ru ? "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" : "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  core::Logger::info(ru ? "🚀 Запуск ClawForge..." : "🚀 Starting ClawForge...");
+  core::Logger::info(ru ? "🚀 Запуск NexaClaw..." : "🚀 Starting NexaClaw...");
   core::Logger::info((ru ? "📁 Рабочая папка: " : "📁 Workspace: ") + config_.workspace.string());
   core::Logger::info((ru ? "🗂️  State папка: " : "🗂️  State dir: ") + config_.stateDir.string());
   core::Logger::info((ru ? "🌐 HTTP: " : "🌐 HTTP: ") + config_.http.host + ":" + std::to_string(config_.http.port));
@@ -96,7 +96,7 @@ int Application::run() {
       eventBus_, config_.api, config_.gateway.auth, config_.rateLimit, config_.audit,
       util::TimeUtil::nowMillis());
 
-  eventBus_.publish("startup", {{"service", "clawforge"}, {"http", config_.http.host + ":" + std::to_string(config_.http.port)}, {"lang", uiLang_}});
+  eventBus_.publish("startup", {{"service", "nexaclaw"}, {"http", config_.http.host + ":" + std::to_string(config_.http.port)}, {"lang", uiLang_}});
 
   const bool ok = http_->start();
   if (!ok) {

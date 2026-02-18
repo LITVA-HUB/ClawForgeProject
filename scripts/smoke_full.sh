@@ -8,6 +8,7 @@ scripts/smoke_models_cli.sh >/dev/null
 scripts/smoke_stage10_cli.sh >/dev/null
 scripts/smoke_stage11_models_auth.sh >/dev/null
 scripts/smoke_stage11_installer.sh >/dev/null
+scripts/smoke_stage12_gateway_security.sh >/dev/null
 
 BIN="${BIN:-./build/nexaclaw}"
 if [[ ! -x "$BIN" && -x ./build/clawforge ]]; then

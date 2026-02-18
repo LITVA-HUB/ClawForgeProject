@@ -96,12 +96,12 @@ void HttpServer::setupRoutes() {
   });
 
   server_.Get("/health", [](const httplib::Request&, httplib::Response& res) {
-    replyJson(res, {{"ok", true}, {"service", "clawforge"}});
+    replyJson(res, {{"ok", true}, {"service", "nexaclaw"}});
   });
 
   server_.Get("/api/status", [&](const httplib::Request&, httplib::Response& res) {
     replyJson(res, {{"ok", true},
-                    {"service", "clawforge"},
+                    {"service", "nexaclaw"},
                     {"now", util::TimeUtil::nowIso8601()},
                     {"uptimeMs", util::TimeUtil::nowMillis() - startedAtMs_},
                     {"sessions", {{"count", sessions_.listSessions().size()}}},
