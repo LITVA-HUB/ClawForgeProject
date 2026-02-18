@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <regex>
 #include <set>
 #include <string>
 #include <thread>
@@ -55,6 +56,7 @@ std::optional<json> httpRequestJson(const std::string& method, const std::string
 
 std::optional<json> httpGetJson(const std::string& url, const std::string& authHeader = "") { return httpRequestJson("GET", url, authHeader, std::nullopt); }
 std::optional<json> httpPostJson(const std::string& url, const json& body, const std::string& authHeader = "") { return httpRequestJson("POST", url, authHeader, body); }
+std::optional<json> httpPatchJson(const std::string& url, const json& body, const std::string& authHeader = "") { return httpRequestJson("PATCH", url, authHeader, body); }
 std::optional<json> httpDeleteJson(const std::string& url, const std::string& authHeader = "") { return httpRequestJson("DELETE", url, authHeader, std::nullopt); }
 
 json loadJsonFile(const std::string& path) { std::ifstream in(path); if (!in) throw std::runtime_error("Cannot open config file: " + path); json j; in >> j; return j; }
@@ -205,7 +207,7 @@ bool ensureConfigFile(const std::string& configPath, std::string& error) {
 void printHelp(const std::string& lang) {
   const bool ru = (lang == "ru");
   std::cout << (ru ? "NexaClaw CLI (alias: clawforge)\n\n" : "NexaClaw CLI (alias: clawforge)\n\n");
-  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw setup|onboard|configure [--wizard|--non-interactive]\n  nexaclaw gateway status|start|stop|restart|call\n  nexaclaw security audit [--deep] [--fix]\n  nexaclaw cron list\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|paste-token|setup-token|use|remove\n";
+  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw setup|onboard|configure [--wizard|--non-interactive]\n  nexaclaw gateway status|start|stop|restart|call\n  nexaclaw security audit [--deep] [--fix]\n  nexaclaw cron status|list|add|edit|enable|disable|run|runs|validate|rm\n  nexaclaw message send --channel telegram --target <chat> --message <text> [--dry-run]\n  nexaclaw channels list|status|capabilities|resolve|add|remove\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|paste-token|setup-token|use|remove\n";
   std::cout << (ru ? "\nСовместимость OpenClaw: неизвестные top-level ветки отдаются как compatibility stub вместо unknown (см. docs/CLI_PARITY.md).\n"
                    : "\nOpenClaw compatibility: unknown top-level branches return compatibility stubs instead of hard unknown (see docs/CLI_PARITY.md).\n");
 }
@@ -257,7 +259,47 @@ int runSessions(const std::string& configPath) {
   std::cout << json({{"ok", true}, {"mode", "local"}, {"sessions", arr}}).dump(2) << std::endl; return 0;
 }
 
-int runCronList(const std::string& configPath) { const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath); const auto remote = httpGetJson("http://" + cfg.http.host + ":" + std::to_string(cfg.http.port) + "/api/cron/jobs", authHeaderFromEnv(cfg)); if (remote.has_value() && remote->value("ok", false)) { std::cout << remote->dump(2) << std::endl; return 0; } clawforge::core::EventBus bus; clawforge::automation::CronScheduler cron(cfg.stateDir, cfg.cron.tickMs, [](const auto&) {}, bus); if (!cron.init()) return 1; json arr = json::array(); for (const auto& job : cron.listJobs()) arr.push_back({{"id", job.id}, {"name", job.name}, {"kind", job.kind}, {"nextRunAt", job.nextRunAt}, {"enabled", job.enabled}}); std::cout << json({{"ok", true}, {"mode", "local"}, {"jobs", arr}}).dump(2) << std::endl; return 0; }
+json cronJobToJson(const clawforge::automation::CronJob& job) {
+  return {{"id", job.id},
+          {"name", job.name},
+          {"description", job.description},
+          {"kind", job.kind},
+          {"everyMs", job.everyMs},
+          {"at", job.atIso},
+          {"cron", job.cronExpr},
+          {"schedule", {{"kind", job.kind}, {"everyMs", job.everyMs}, {"at", job.atIso}, {"expr", job.cronExpr}, {"tz", job.tz}}},
+          {"nextRunAt", job.nextRunAt},
+          {"sessionKey", job.sessionKey},
+          {"message", job.message},
+          {"sessionTarget", job.sessionTarget},
+          {"wakeMode", job.wakeMode},
+          {"agentId", job.agentId},
+          {"deleteAfterRun", job.deleteAfterRun},
+          {"payload", {{"kind", job.payload.kind}, {"text", job.payload.text}, {"message", job.payload.text}, {"model", job.payload.model}, {"thinking", job.payload.thinking}, {"timeoutSeconds", job.payload.timeoutSeconds}}},
+          {"delivery", {{"mode", job.delivery.mode}, {"channel", job.delivery.channel}, {"to", job.delivery.to}, {"bestEffort", job.delivery.bestEffort}}},
+          {"enabled", job.enabled},
+          {"consecutiveErrors", job.consecutiveErrors},
+          {"lastRunAt", job.lastRunAt},
+          {"lastSuccessAt", job.lastSuccessAt}};
+}
+
+int runCronList(const std::string& configPath) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  const auto remote = httpGetJson("http://" + cfg.http.host + ":" + std::to_string(cfg.http.port) + "/api/cron/jobs", authHeaderFromEnv(cfg));
+  if (remote.has_value() && remote->value("ok", false)) {
+    std::cout << remote->dump(2) << std::endl;
+    return 0;
+  }
+
+  clawforge::core::EventBus bus;
+  clawforge::automation::CronScheduler cron(cfg.stateDir, cfg.cron.tickMs, [](const auto&) {}, bus);
+  if (!cron.init()) return 1;
+
+  json arr = json::array();
+  for (const auto& job : cron.listJobs()) arr.push_back(cronJobToJson(job));
+  std::cout << json({{"ok", true}, {"mode", "local"}, {"jobs", arr}}).dump(2) << std::endl;
+  return 0;
+}
 int runToolsList(const std::string& configPath) { const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath); const auto remote = httpGetJson("http://" + cfg.http.host + ":" + std::to_string(cfg.http.port) + "/api/tools", authHeaderFromEnv(cfg)); if (remote.has_value() && remote->value("ok", false)) { std::cout << remote->dump(2) << std::endl; return 0; } clawforge::tools::ToolRegistry tools; clawforge::tools::registerBuiltinTools(tools, cfg.workspace); tools.setPolicy(cfg.toolsPolicy); std::cout << json({{"ok", true}, {"mode", "local"}, {"tools", tools.list()}, {"allowedTools", tools.allowedTools()}}).dump(2) << std::endl; return 0; }
 
 int runPairingList(const std::string& configPath) { const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath); clawforge::channels::TelegramPairingStore store(cfg.stateDir); if (!store.init()) return 1; std::cout << "Pairing requests:\n"; for (const auto& req : store.listRequests()) std::cout << "- code=" << req.code << " userId=" << req.userId << " chatId=" << req.chatId << " approved=" << (req.approved ? "yes" : "no") << "\n"; std::cout << "\nApproved:\n"; for (const auto& req : store.listApproved()) std::cout << "- userId=" << req.userId << " code=" << req.code << " approvedAt=" << req.approvedAt << "\n"; return 0; }
@@ -444,27 +486,346 @@ int runBrowserSnapshot(const std::string& configPath, const std::string& urlHint
   return out.value("ok", false) ? 0 : 1;
 }
 
-int runCronAction(const std::string& configPath, const std::string& action, const std::string& arg = "") {
+int runCronAction(const std::string& configPath, const std::string& action,
+                  const std::string& arg = "", const std::string& arg2 = "") {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
   const std::string base = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
   const auto auth = authHeaderFromEnv(cfg);
+
   if (action == "list") return runCronList(configPath);
+
+  if (action == "status") {
+    const auto remote = httpGetJson(base + "/api/cron/status", auth);
+    if (remote.has_value()) {
+      std::cout << remote->dump(2) << std::endl;
+      return remote->value("ok", false) ? 0 : 1;
+    }
+    clawforge::core::EventBus bus;
+    clawforge::automation::CronScheduler cron(cfg.stateDir, cfg.cron.tickMs, [](const auto&) {}, bus);
+    if (!cron.init()) return 1;
+    const auto out = cron.status();
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 1;
+  }
+
   if (action == "add" || action == "validate") {
     auto payload = json::parse(arg, nullptr, false);
-    if (payload.is_discarded()) { std::cerr << "Invalid JSON payload" << std::endl; return 1; }
+    if (payload.is_discarded()) {
+      std::cerr << "Invalid JSON payload" << std::endl;
+      return 1;
+    }
     const auto remote = httpPostJson(base + (action == "add" ? "/api/cron/jobs" : "/api/cron/validate"), payload, auth);
-    if (remote.has_value()) { std::cout << remote->dump(2) << std::endl; return remote->value("ok", false) ? 0 : 1; }
-    clawforge::core::EventBus bus; clawforge::automation::CronScheduler cron(cfg.stateDir, cfg.cron.tickMs, [](const auto&) {}, bus); if (!cron.init()) return 1;
+    if (remote.has_value()) {
+      std::cout << remote->dump(2) << std::endl;
+      return remote->value("ok", false) ? 0 : 1;
+    }
+    clawforge::core::EventBus bus;
+    clawforge::automation::CronScheduler cron(cfg.stateDir, cfg.cron.tickMs, [](const auto&) {}, bus);
+    if (!cron.init()) return 1;
     const auto out = (action == "add") ? cron.addJob(payload) : cron.validate(payload);
-    std::cout << out.dump(2) << std::endl; return out.value("ok", false) ? 0 : 1;
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 1;
   }
-  if (action == "rm" || action == "run") {
-    const auto remote = (action == "rm") ? httpDeleteJson(base + "/api/cron/jobs/" + arg, auth) : httpPostJson(base + "/api/cron/jobs/" + arg + "/run-now", json::object(), auth);
-    if (remote.has_value()) { std::cout << remote->dump(2) << std::endl; return remote->value("ok", false) ? 0 : 1; }
-    clawforge::core::EventBus bus; clawforge::automation::CronScheduler cron(cfg.stateDir, cfg.cron.tickMs, [](const auto&) {}, bus); if (!cron.init()) return 1;
-    json out = (action == "rm") ? json{{"ok", cron.removeJob(arg)}, {"id", arg}} : cron.runNow(arg);
-    std::cout << out.dump(2) << std::endl; return out.value("ok", false) ? 0 : 1;
+
+  if (action == "edit") {
+    auto patch = json::parse(arg2, nullptr, false);
+    if (patch.is_discarded()) {
+      std::cerr << "Invalid JSON patch payload" << std::endl;
+      return 1;
+    }
+    const auto remote = httpPatchJson(base + "/api/cron/jobs/" + arg, patch, auth);
+    if (remote.has_value()) {
+      std::cout << remote->dump(2) << std::endl;
+      return remote->value("ok", false) ? 0 : 1;
+    }
+    clawforge::core::EventBus bus;
+    clawforge::automation::CronScheduler cron(cfg.stateDir, cfg.cron.tickMs, [](const auto&) {}, bus);
+    if (!cron.init()) return 1;
+    const auto out = cron.updateJob(arg, patch);
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 1;
   }
+
+  if (action == "enable" || action == "disable") {
+    const bool enable = action == "enable";
+    const auto remote = httpPostJson(base + "/api/cron/jobs/" + arg + (enable ? "/enable" : "/disable"), json::object(), auth);
+    if (remote.has_value()) {
+      std::cout << remote->dump(2) << std::endl;
+      return remote->value("ok", false) ? 0 : 1;
+    }
+    clawforge::core::EventBus bus;
+    clawforge::automation::CronScheduler cron(cfg.stateDir, cfg.cron.tickMs, [](const auto&) {}, bus);
+    if (!cron.init()) return 1;
+    const auto out = cron.setEnabled(arg, enable);
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 1;
+  }
+
+  if (action == "runs") {
+    int limit = 20;
+    if (!arg2.empty()) {
+      try { limit = std::max(1, std::stoi(arg2)); } catch (...) { limit = 20; }
+    }
+    const auto remote = httpGetJson(base + "/api/cron/jobs/" + arg + "/runs?limit=" + std::to_string(limit), auth);
+    if (remote.has_value()) {
+      std::cout << remote->dump(2) << std::endl;
+      return remote->value("ok", false) ? 0 : 1;
+    }
+    clawforge::core::EventBus bus;
+    clawforge::automation::CronScheduler cron(cfg.stateDir, cfg.cron.tickMs, [](const auto&) {}, bus);
+    if (!cron.init()) return 1;
+    const auto out = cron.listRuns(arg, limit);
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 1;
+  }
+
+  if (action == "run") {
+    const std::string mode = arg2.empty() ? "force" : arg2;
+    const auto remote = httpPostJson(base + "/api/cron/jobs/" + arg + "/run", json{{"mode", mode}}, auth);
+    if (remote.has_value()) {
+      std::cout << remote->dump(2) << std::endl;
+      return remote->value("ok", false) ? 0 : 1;
+    }
+    clawforge::core::EventBus bus;
+    clawforge::automation::CronScheduler cron(cfg.stateDir, cfg.cron.tickMs, [](const auto&) {}, bus);
+    if (!cron.init()) return 1;
+    const auto out = cron.runNow(arg, mode);
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 1;
+  }
+
+  if (action == "rm" || action == "remove") {
+    const auto remote = httpDeleteJson(base + "/api/cron/jobs/" + arg, auth);
+    if (remote.has_value()) {
+      std::cout << remote->dump(2) << std::endl;
+      return remote->value("ok", false) ? 0 : 1;
+    }
+    clawforge::core::EventBus bus;
+    clawforge::automation::CronScheduler cron(cfg.stateDir, cfg.cron.tickMs, [](const auto&) {}, bus);
+    if (!cron.init()) return 1;
+    json out = {{"ok", cron.removeJob(arg)}, {"id", arg}};
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 1;
+  }
+
+  return 1;
+}
+
+std::vector<std::string> configuredChannels(const clawforge::core::AppConfig& cfg) {
+  std::vector<std::string> out;
+  if (cfg.telegram.enabled) out.push_back("telegram");
+  return out;
+}
+
+bool parseTelegramTarget(const std::string& target, json& payload, std::string& error) {
+  if (target.empty()) {
+    error = "target is required";
+    return false;
+  }
+
+  static const std::regex reUser(R"(^@[A-Za-z0-9_]{4,}$)");
+  static const std::regex reChat(R"(^-?[0-9]+$)");
+  static const std::regex reTopic(R"(^(-?[0-9]+):topic:([0-9]+)$)");
+  static const std::regex reTopicShort(R"(^(-?[0-9]+):([0-9]+)$)");
+
+  std::smatch m;
+  if (std::regex_match(target, reUser) || std::regex_match(target, reChat)) {
+    payload["chat_id"] = target;
+    return true;
+  }
+  if (std::regex_match(target, m, reTopic) || std::regex_match(target, m, reTopicShort)) {
+    payload["chat_id"] = m[1].str();
+    payload["message_thread_id"] = std::stoi(m[2].str());
+    return true;
+  }
+
+  error = "telegram target must be @username, chatId, or chatId:topic:threadId";
+  return false;
+}
+
+int runMessageSend(const std::string& configPath, const std::vector<std::string>& pos) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+
+  std::string channel = argValue(pos, "--channel").value_or("");
+  const std::string target = argValue(pos, "--target").value_or("");
+  const std::string message = argValue(pos, "--message").value_or("");
+  const std::string media = argValue(pos, "--media").value_or("");
+  const bool dryRun = hasFlag(pos, "--dry-run");
+
+  if (target.empty()) {
+    std::cout << json{{"ok", false}, {"error", "--target is required"}}.dump(2) << std::endl;
+    return 1;
+  }
+  if (message.empty() && media.empty()) {
+    std::cout << json{{"ok", false}, {"error", "--message or --media is required"}}.dump(2) << std::endl;
+    return 1;
+  }
+
+  if (channel.empty()) {
+    const auto channels = configuredChannels(cfg);
+    if (channels.size() == 1) {
+      channel = channels[0];
+    } else if (channels.empty()) {
+      std::cout << json{{"ok", false}, {"error", "No enabled channels configured. Pass --channel explicitly."}}.dump(2) << std::endl;
+      return 1;
+    } else {
+      std::cout << json{{"ok", false}, {"error", "Multiple enabled channels configured. Pass --channel."}}.dump(2) << std::endl;
+      return 1;
+    }
+  }
+
+  if (channel != "telegram") {
+    std::cout << json{{"ok", false}, {"error", "Only --channel telegram is implemented in current baseline"}, {"channel", channel}}.dump(2) << std::endl;
+    return 2;
+  }
+
+  json telegramPayload;
+  std::string targetError;
+  if (!parseTelegramTarget(target, telegramPayload, targetError)) {
+    std::cout << json{{"ok", false}, {"channel", channel}, {"target", target}, {"error", targetError}}.dump(2) << std::endl;
+    return 1;
+  }
+  if (!message.empty()) telegramPayload["text"] = message;
+  if (!media.empty()) {
+    std::cout << json{{"ok", false}, {"error", "--media is not implemented yet for telegram baseline"}}.dump(2) << std::endl;
+    return 2;
+  }
+
+  if (dryRun) {
+    std::cout << json{{"ok", true}, {"dryRun", true}, {"action", "message.send"}, {"channel", channel}, {"target", target}, {"payload", telegramPayload}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  const char* token = std::getenv(cfg.telegram.botTokenEnv.c_str());
+  if (!token || std::string(token).empty()) {
+    std::cout << json{{"ok", false}, {"error", "Telegram token env is empty"}, {"tokenEnv", cfg.telegram.botTokenEnv}}.dump(2) << std::endl;
+    return 1;
+  }
+
+  const std::string url = "https://api.telegram.org/bot" + std::string(token) + "/sendMessage";
+  const std::string cmd = "curl -sS -X POST " + clawforge::util::Shell::quote(url) +
+                          " -H " + clawforge::util::Shell::quote("Content-Type: application/json") +
+                          " --data " + clawforge::util::Shell::quote(telegramPayload.dump());
+  const auto res = clawforge::util::Shell::run(cmd);
+  if (res.exitCode != 0) {
+    std::cout << json{{"ok", false}, {"error", "telegram send failed"}, {"channel", channel}, {"target", target}, {"details", res.output}}.dump(2) << std::endl;
+    return 1;
+  }
+
+  auto parsed = json::parse(res.output, nullptr, false);
+  if (parsed.is_discarded()) {
+    std::cout << json{{"ok", false}, {"error", "telegram returned non-json response"}, {"raw", res.output}}.dump(2) << std::endl;
+    return 1;
+  }
+
+  if (!parsed.value("ok", false)) {
+    std::cout << json{{"ok", false}, {"error", "telegram api error"}, {"response", parsed}}.dump(2) << std::endl;
+    return 1;
+  }
+
+  std::cout << json{{"ok", true},
+                    {"action", "message.send"},
+                    {"channel", channel},
+                    {"target", target},
+                    {"messageId", parsed["result"].value("message_id", 0)},
+                    {"response", parsed}}
+                   .dump(2)
+            << std::endl;
+  return 0;
+}
+
+int runChannelsAction(const std::string& configPath, const std::vector<std::string>& pos) {
+  if (pos.size() < 2) {
+    std::cout << json{{"ok", false}, {"error", "Usage: channels list|status|capabilities|add|remove|resolve"}}.dump(2) << std::endl;
+    return 1;
+  }
+
+  const std::string action = pos[1];
+  auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+
+  if (action == "list" || action == "status") {
+    const char* token = std::getenv(cfg.telegram.botTokenEnv.c_str());
+    const bool tokenPresent = token && std::string(token).size() > 0;
+    const json telegram = {{"channel", "telegram"},
+                           {"enabled", cfg.telegram.enabled},
+                           {"tokenEnv", cfg.telegram.botTokenEnv},
+                           {"tokenPresent", tokenPresent},
+                           {"dmPolicy", cfg.telegram.dmPolicy}};
+    std::cout << json{{"ok", true}, {"channels", json::array({telegram})}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (action == "capabilities") {
+    const json caps = {{"send", true},
+                       {"read", true},
+                       {"react", false},
+                       {"delete", false},
+                       {"poll", false},
+                       {"threads", true}};
+    std::cout << json{{"ok", true}, {"channel", "telegram"}, {"capabilities", caps}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (action == "resolve") {
+    const std::string channel = argValue(pos, "--channel").value_or("telegram");
+    if (channel != "telegram") {
+      std::cout << json{{"ok", false}, {"error", "resolve baseline supports --channel telegram only"}}.dump(2) << std::endl;
+      return 2;
+    }
+    if (pos.size() < 3) {
+      std::cout << json{{"ok", false}, {"error", "Usage: channels resolve --channel telegram <target>"}}.dump(2) << std::endl;
+      return 1;
+    }
+
+    std::string target;
+    for (size_t i = 2; i < pos.size(); ++i) {
+      if (pos[i].rfind("--", 0) == 0) {
+        ++i;
+        continue;
+      }
+      target = pos[i];
+      break;
+    }
+
+    if (target.empty()) {
+      std::cout << json{{"ok", false}, {"error", "target is required"}}.dump(2) << std::endl;
+      return 1;
+    }
+
+    json parsed;
+    std::string err;
+    if (!parseTelegramTarget(target, parsed, err)) {
+      std::cout << json{{"ok", false}, {"target", target}, {"error", err}}.dump(2) << std::endl;
+      return 1;
+    }
+    std::cout << json{{"ok", true}, {"channel", "telegram"}, {"input", target}, {"resolved", parsed}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (action == "add" || action == "remove") {
+    const std::string channel = argValue(pos, "--channel").value_or("");
+    if (channel != "telegram") {
+      std::cout << json{{"ok", false}, {"error", "Only --channel telegram is implemented in current baseline"}}.dump(2) << std::endl;
+      return 2;
+    }
+
+    auto j = loadJsonFile(configPath);
+    if (action == "add") {
+      j["telegram"]["enabled"] = true;
+      if (const auto tokenEnv = argValue(pos, "--token-env"); tokenEnv.has_value()) j["telegram"]["botTokenEnv"] = *tokenEnv;
+      if (const auto dmPolicy = argValue(pos, "--dm-policy"); dmPolicy.has_value()) j["telegram"]["dmPolicy"] = *dmPolicy;
+      saveJsonFile(configPath, j);
+      std::cout << json{{"ok", true}, {"action", "channels.add"}, {"channel", channel}, {"enabled", true}, {"config", configPath}}.dump(2) << std::endl;
+      return 0;
+    }
+
+    j["telegram"]["enabled"] = false;
+    saveJsonFile(configPath, j);
+    std::cout << json{{"ok", true}, {"action", "channels.remove"}, {"channel", channel}, {"enabled", false}, {"config", configPath}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  std::cout << json{{"ok", false}, {"error", "Unsupported channels action in baseline"}, {"action", action}}.dump(2) << std::endl;
   return 1;
 }
 
@@ -972,11 +1333,44 @@ int main(int argc, char** argv) {
     if (command == "browser" && pos.size() >= 2 && pos[1] == "status") return runBrowserStatus(configPath);
     if (command == "browser" && pos.size() >= 3 && pos[1] == "open") return runBrowserOpen(configPath, pos[2]);
     if (command == "browser" && pos.size() >= 2 && pos[1] == "snapshot") return runBrowserSnapshot(configPath, pos.size() >= 3 ? pos[2] : "");
+    if (command == "cron" && pos.size() >= 2 && pos[1] == "status") return runCronAction(configPath, "status");
     if (command == "cron" && pos.size() >= 2 && pos[1] == "list") return runCronAction(configPath, "list");
-    if (command == "cron" && pos.size() >= 2 && pos[1] == "add") { auto j = parseJsonArg(pos); if (!j.has_value()) { std::cerr << "Missing --json payload" << std::endl; return 1; } return runCronAction(configPath, "add", *j); }
-    if (command == "cron" && pos.size() >= 3 && pos[1] == "rm") return runCronAction(configPath, "rm", pos[2]);
-    if (command == "cron" && pos.size() >= 3 && pos[1] == "run") return runCronAction(configPath, "run", pos[2]);
-    if (command == "cron" && pos.size() >= 2 && pos[1] == "validate") { auto j = parseJsonArg(pos); if (!j.has_value()) { std::cerr << "Missing --json payload" << std::endl; return 1; } return runCronAction(configPath, "validate", *j); }
+    if (command == "cron" && pos.size() >= 2 && pos[1] == "add") {
+      auto j = parseJsonArg(pos);
+      if (!j.has_value()) { std::cerr << "Missing --json payload" << std::endl; return 1; }
+      return runCronAction(configPath, "add", *j);
+    }
+    if (command == "cron" && pos.size() >= 2 && pos[1] == "validate") {
+      auto j = parseJsonArg(pos);
+      if (!j.has_value()) { std::cerr << "Missing --json payload" << std::endl; return 1; }
+      return runCronAction(configPath, "validate", *j);
+    }
+    if (command == "cron" && pos.size() >= 3 && pos[1] == "edit") {
+      auto j = parseJsonArg(pos);
+      if (!j.has_value()) { std::cerr << "Missing --json patch" << std::endl; return 1; }
+      return runCronAction(configPath, "edit", pos[2], *j);
+    }
+    if (command == "cron" && pos.size() >= 3 && (pos[1] == "rm" || pos[1] == "remove")) return runCronAction(configPath, "rm", pos[2]);
+    if (command == "cron" && pos.size() >= 3 && pos[1] == "enable") return runCronAction(configPath, "enable", pos[2]);
+    if (command == "cron" && pos.size() >= 3 && pos[1] == "disable") return runCronAction(configPath, "disable", pos[2]);
+    if (command == "cron" && pos.size() >= 3 && pos[1] == "runs") {
+      const auto limit = argValue(pos, "--limit").value_or("20");
+      return runCronAction(configPath, "runs", pos[2], limit);
+    }
+    if (command == "cron" && pos.size() >= 3 && pos[1] == "run") {
+      const std::string mode = hasFlag(pos, "--due") ? "due" : "force";
+      return runCronAction(configPath, "run", pos[2], mode);
+    }
+
+    if (command == "message") {
+      if (pos.size() >= 2 && pos[1] == "send") return runMessageSend(configPath, pos);
+      return (printCompatNotImplemented("message " + (pos.size() >= 2 ? pos[1] : ""), lang), 2);
+    }
+
+    if (command == "channels") {
+      return runChannelsAction(configPath, pos);
+    }
+
     if (command == "tools" && pos.size() >= 2 && pos[1] == "list") return runToolsList(configPath);
     if (command == "tools" && pos.size() >= 4 && pos[1] == "call" && pos[3] == "--json") return runToolsCall(configPath, pos[2], pos.size() >= 5 ? pos[4] : "{}");
     if (command == "logs" && pos.size() >= 2 && pos[1] == "tail") return runLogsTail(configPath, pos.size() >= 3 ? std::max(1, std::stoi(pos[2])) : 50);
@@ -1015,7 +1409,7 @@ int main(int argc, char** argv) {
       std::cerr << "Unknown image-fallbacks subcommand" << std::endl; return 1;
     }
 
-    std::set<std::string> compatTop = {"dashboard","reset","uninstall","update","message","agent","agents","acp","memory","nodes","devices","node","approvals","sandbox","dns","docs","hooks","webhooks","plugins","channels","skills","tui","voicecall","directory"};
+    std::set<std::string> compatTop = {"dashboard","reset","uninstall","update","agent","agents","acp","memory","nodes","devices","node","approvals","sandbox","dns","docs","hooks","webhooks","plugins","skills","tui","voicecall","directory"};
     if (compatTop.count(command)) return (printCompatNotImplemented(command, lang), 2);
 
     if (command != "run") {

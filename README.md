@@ -7,7 +7,7 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 - 🇷🇺 Russian README: [README.ru.md](./README.ru.md)
 - Parity matrix: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
 - CLI parity table: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
-- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
+- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
 
 ---
 
@@ -15,11 +15,12 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 
 - HTTP API gateway: `/health`, `/api/status`, `/api/message`, `/api/inbound`, `/api/tools`, `/api/sessions`
 - Realtime SSE stream: `/api/events/stream`
-- Cron engine: `every` / `at` / `cron` + validate + run-now
+- Cron semantic baseline: `status/list/add/edit/enable/disable/run/runs/validate/rm` + sessionTarget/payload/delivery/wakeMode
 - Gateway control-plane baseline: `gateway status|start|stop|restart|health|call`
 - Session store + JSONL transcripts
 - Scoped tools policy (`global` / `channels` / `peers`)
-- Telegram baseline + pairing policy/approvals
+- Telegram baseline + pairing policy/approvals + strict `message send` baseline
+- Channels management baseline: `channels list|status|capabilities|resolve|add|remove` (telegram)
 - Task lane API (`/api/tasks`) with timeout/cancel baseline
 - Security baseline: auth token mode, per-source rate limiting, audit JSONL
 - Browser relay baseline endpoints (`status/open`) + honest snapshot diagnostic stub
@@ -141,7 +142,7 @@ NexaClaw Stage 10 provides practical CLI parity for high-value OpenClaw flows.
 
 ### 1:1 or near-1:1 mappings
 - `status`, `health`, `doctor`, `sessions`
-- `cron list|add|rm|run|validate`
+- `cron status|list|add|edit|enable|disable|run|runs|validate|rm`
 - `tools list|call`
 - `models list|status|set|aliases|fallbacks|probe|set-image`
 - `models auth list|add|paste-token|setup-token|use|remove` (local auth profile store)
@@ -149,6 +150,8 @@ NexaClaw Stage 10 provides practical CLI parity for high-value OpenClaw flows.
 - `browser status|open|snapshot` (snapshot is still baseline/diagnostic)
 - `config get/set` (expanded key coverage)
 - `logs tail`, `system event`, `pairing list|approve`
+- `message send --channel telegram --target ... --message ...` (strict target validation baseline)
+- `channels list|status|capabilities|resolve|add|remove` (telegram baseline)
 
 ### Migration guide (OpenClaw -> NexaClaw)
 - `openclaw browser status` -> `nexaclaw browser status`
@@ -236,6 +239,10 @@ scripts/smoke_stage6.sh
 scripts/smoke_models_cli.sh
 scripts/smoke_stage11_models_auth.sh
 scripts/smoke_stage11_installer.sh
+scripts/smoke_stage12_gateway_security.sh
+scripts/smoke_stage13_setup_wizard.sh
+scripts/smoke_stage14_cron_semantics.sh
+scripts/smoke_stage15_message_channels.sh
 
 # strict compile gates
 cmake -S . -B build_warnings -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror'

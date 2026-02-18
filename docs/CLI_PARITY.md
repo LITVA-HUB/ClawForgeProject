@@ -1,4 +1,4 @@
-# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 13)
+# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 15)
 
 Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
@@ -16,7 +16,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `health` | `health` | implemented | `nexaclaw health` |
 | `doctor` | `doctor` | implemented | `nexaclaw doctor` / `--doctor` |
 | `sessions` | list/show/ops | partial | `nexaclaw sessions` list baseline |
-| `cron` | list/add/rm/run/validate | implemented | all baseline ops in CLI + local fallback |
+| `cron` | status/list/add/edit/enable/disable/run/runs/validate/rm | partial | Stage 14 semantic baseline (sessionTarget/payload/delivery/wakeMode + run history), still not full OpenClaw delivery ecosystem |
 | `tools` | list/call | implemented | `tools list`, `tools call <name> --json <payload>` |
 | `browser` | status/open/snapshot/... | partial | `status|open|snapshot` implemented; snapshot still diagnostic baseline |
 | `config` | get/set | partial | expanded key coverage, not full OpenClaw config surface |
@@ -26,12 +26,12 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `system` | event/... | partial | `system event <text>` baseline enqueue path |
 | `pairing` | list/approve/... | partial | `list`, `approve` |
 | `gateway` | status/start/stop/restart/call | partial | `status|start|stop|restart|health|call` baseline (local pid/log + RPC-like `gateway call`) |
-| `message` | send/... | stub | not mapped yet |
+| `message` | send/... | partial | `message send` baseline for telegram with strict target validation + dry-run |
 | `agent` | manage/ops | stub | not mapped yet |
 | `agents` | manage/ops | stub | not mapped yet |
 | `acp` | protocol tooling | impossible-now | requires ACP ecosystem parity |
 | `approvals` | approvals workflow | stub | not mapped yet |
-| `channels` | channel providers mgmt | stub | not mapped yet |
+| `channels` | channel providers mgmt | partial | telegram baseline: list/status/capabilities/resolve/add/remove |
 | `dashboard` | dashboard/ui | impossible-now | OpenClaw UI stack |
 | `devices` | devices control | stub | not mapped yet |
 | `directory` | identity/directory | impossible-now | no directory backend in NexaClaw |
@@ -63,12 +63,30 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - `browser open <url>` — **implemented**
 - `browser snapshot [urlHint]` — **partial** (currently diagnostic/baseline in backend)
 
-### Cron
+### Cron (Stage 14 semantic baseline)
+- `cron status` — **implemented**
 - `cron list` — **implemented**
 - `cron add --json '<payload>'` — **implemented**
+- `cron edit <id> --json '<patch>'` — **implemented**
+- `cron enable <id>` / `cron disable <id>` — **implemented**
+- `cron run <id> [--due]` — **implemented** (`force|due` semantics)
+- `cron runs <id> --limit <n>` — **implemented** (JSONL run history)
 - `cron rm <id>` — **implemented**
-- `cron run <id>` — **implemented**
 - `cron validate --json '<payload>'` — **implemented**
+- contract checks implemented: `main->systemEvent`, `isolated->agentTurn`
+- default isolated `delivery.mode=announce`; retry backoff ladder after recurring errors
+
+### Message (Stage 15 baseline)
+- `message send --channel telegram --target <...> --message <...>` — **implemented baseline**
+- strict telegram target validation (`@username`, `chatId`, `chatId:topic:threadId`)
+- `--dry-run` supported for safe validation
+- non-telegram channels/actions still roadmap
+
+### Channels (Stage 15 baseline)
+- `channels list` / `channels status` — **implemented baseline**
+- `channels capabilities` — **implemented baseline** (telegram static capability map)
+- `channels resolve --channel telegram <target>` — **implemented baseline**
+- `channels add/remove --channel telegram` — **implemented baseline** (config toggles)
 
 ### Tools
 - `tools list` — **implemented**
@@ -105,8 +123,9 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - non-interactive mode via `--non-interactive` / `--yes`
 - safe defaults preset (dmScope + auth token env + telegram dmPolicy)
 
-## Stage 13 summary
-- Focus for this sprint: UX/onboarding lift (bilingual terminal setup wizard) on top of Stage 12 operational baseline.
+## Stage 15 summary
+- Focus for this sprint: message/channels baseline on top of Stage 14 cron semantics.
+- Added strict telegram send path and channel-management baseline commands.
 - Where full OpenClaw feature equivalence is impossible now, NexaClaw returns explicit baseline diagnostics instead of silent gaps.
 
 

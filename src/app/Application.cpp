@@ -65,10 +65,41 @@ int Application::run() {
   cron_ = std::make_unique<automation::CronScheduler>(
       config_.stateDir, config_.cron.tickMs,
       [this](const automation::CronJob& job) {
-        const std::string sessionKey = job.sessionKey.empty() ? ("cron:" + job.id) : job.sessionKey;
-        const std::string text = "[cron " + job.name + "] " + job.message;
-        const auto reply = agent_->handleMessage(sessionKey, text, true);
-        core::Logger::info("Cron job fired: " + job.id + " -> " + reply);
+        const std::string label = "[cron:" + job.id + " " + job.name + "] ";
+
+        if (job.sessionTarget == "main") {
+          if (job.wakeMode == "next-heartbeat") {
+            sessions_.ensureSession("main");
+            sessions_.appendMessage("main", "system", label + job.payload.text);
+            core::Logger::info("Cron job queued for next-heartbeat: " + job.id);
+            return;
+          }
+
+          const auto reply = agent_->handleMessage("main", label + job.payload.text, true);
+          core::Logger::info("Cron main job fired: " + job.id + " -> " + reply);
+          return;
+        }
+
+        std::string sessionKey;
+        const std::string defaultIsolated = "cron:" + job.id;
+        if (!job.sessionKey.empty() && job.sessionKey != defaultIsolated) {
+          sessionKey = job.sessionKey;
+        } else {
+          sessionKey = defaultIsolated + ":" + std::to_string(util::TimeUtil::nowMillis());
+        }
+
+        const auto reply = agent_->handleMessage(sessionKey, label + job.payload.text, false);
+        core::Logger::info("Cron isolated job fired: " + job.id + " -> " + reply);
+
+        if (job.delivery.mode == "announce") {
+          const std::string summary = "[cron announce " + job.name + "] " + reply;
+          if (job.wakeMode == "next-heartbeat") {
+            sessions_.ensureSession("main");
+            sessions_.appendMessage("main", "system", summary);
+          } else {
+            (void)agent_->handleMessage("main", summary, true);
+          }
+        }
       },
       eventBus_);
 

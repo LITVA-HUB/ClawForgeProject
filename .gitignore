@@ -6,6 +6,7 @@ cmake-build-*/
 state/sessions/*.jsonl
 state/sessions/sessions.json
 state/cron/jobs.json
+state/cron/runs/*.jsonl
 state/telegram/pairing.json
 state/tasks/tasks.json
 state/audit/events.jsonl

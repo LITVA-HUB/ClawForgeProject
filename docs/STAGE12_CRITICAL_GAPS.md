@@ -15,8 +15,8 @@ Audit date: 2026-02-18
 
 - OpenClaw top-level command surface in docs: ~40 commands.
 - NexaClaw currently has:
-  - ~16 top-level commands with real behavior (`status/health/doctor/sessions/setup/onboard/configure/gateway/security/cron/tools/browser/config/models/logs/system/pairing` + image-fallbacks)
-  - compatibility stubs for the rest (40/40 top-level names recognized; practical coverage increased in Stage 12/13).
+  - ~18 top-level commands with real behavior (`status/health/doctor/sessions/setup/onboard/configure/gateway/security/cron/message/channels/tools/browser/config/models/logs/system/pairing` + image-fallbacks)
+  - compatibility stubs for the rest (40/40 top-level names recognized; practical coverage increased in Stage 12/13/14).
 - Practical baseline is strong for local single-agent + Telegram + cron/tools/models routing.
 - Full OpenClaw parity is still blocked by several architectural gaps.
 
@@ -39,27 +39,31 @@ Audit date: 2026-02-18
 ---
 
 ## 2) Message/channel action parity
-**Gap:** `message` command is stubbed; no unified outbound action surface.
+**Current:** Stage 15 baseline landed for `message send` + `channels` management.
 
-**Why critical:** OpenClaw’s multi-channel usefulness depends on direct send/edit/react/poll style commands and structured targets.
+**What landed:**
+- `nexaclaw message send --channel telegram --target <...> --message <...> [--dry-run]`
+- strict telegram target validation (no silent ambiguity)
+- `channels list/status/capabilities/resolve/add/remove` baseline for telegram
 
-**Minimum target:**
-- `nexaclaw message send --channel <...> --target <...> --message <...>`
-- Baseline `react` + `delete` for channels that support it
-- Strict target format validation (no silent ambiguity)
+**Remaining gap:**
+- action expansion (`react/delete/poll/thread` family)
+- non-telegram provider parity and target normalization across ecosystems
 
 ---
 
 ## 3) Cron parity semantics (beyond add/list/run/rm)
-**Gap:** current cron baseline misses key OpenClaw semantics.
+**Current:** Stage 14 semantic baseline landed.
 
-**Why critical:** scheduler is one of the highest-value OpenClaw automation features.
-
-**Missing critical pieces:**
+**What landed:**
 - `cron status`, `cron edit`, `cron enable/disable`, `cron runs`
 - `sessionTarget` contract (`main -> systemEvent`, `isolated -> agentTurn`)
-- delivery controls for isolated runs (`announce|none`, `channel/to`, best-effort)
-- wake modes parity (`now` vs `next-heartbeat`)
+- `wakeMode` support (`now` vs `next-heartbeat`)
+- delivery baseline (`none|announce`) and run-history JSONL + retry backoff
+
+**Remaining gap:**
+- full delivery parity to real channel targets (`channel/to`, best-effort end-to-end)
+- richer timezone/cron-expression parity and OpenClaw-level scheduler edge cases
 
 ---
 
@@ -123,9 +127,9 @@ Audit date: 2026-02-18
 ## Recommended Stage 12 execution order
 
 1. ✅ **Gateway + config apply/patch RPC baseline**
-2. **Cron semantic parity (`status/edit/enable/disable/runs` + sessionTarget/delivery)**
+2. ✅ **Cron semantic parity baseline (`status/edit/enable/disable/runs` + sessionTarget/wakeMode/delivery baseline)**
 3. ✅ **Secure DM/session isolation + `security audit` baseline**
-4. **Message send baseline + channel target validation**
+4. ✅ **Message send baseline + channel target validation**
 5. **OAuth device-code flow for `openai-codex`**
 6. **Browser real backend milestone (Playwright)**
 

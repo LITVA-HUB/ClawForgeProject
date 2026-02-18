@@ -1,5 +1,6 @@
 #include "http/HttpServer.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 
 #include <nlohmann/json.hpp>
@@ -238,30 +239,101 @@ void HttpServer::setupRoutes() {
     replyJson(res, result, result.value("ok", false) ? 200 : 400);
   });
 
+  server_.Get("/api/cron/status", [&](const httplib::Request&, httplib::Response& res) {
+    replyJson(res, cron_.status());
+  });
+
   server_.Get("/api/cron/jobs", [&](const httplib::Request&, httplib::Response& res) {
     json arr = json::array();
     for (const auto& j : cron_.listJobs()) {
-      arr.push_back({{"id", j.id}, {"name", j.name}, {"kind", j.kind}, {"everyMs", j.everyMs}, {"at", j.atIso}, {"cron", j.cronExpr}, {"nextRunAt", j.nextRunAt}, {"sessionKey", j.sessionKey}, {"message", j.message}, {"enabled", j.enabled}});
+      arr.push_back({{"id", j.id},
+                     {"name", j.name},
+                     {"description", j.description},
+                     {"kind", j.kind},
+                     {"everyMs", j.everyMs},
+                     {"at", j.atIso},
+                     {"cron", j.cronExpr},
+                     {"schedule", {{"kind", j.kind}, {"everyMs", j.everyMs}, {"at", j.atIso}, {"expr", j.cronExpr}, {"tz", j.tz}}},
+                     {"nextRunAt", j.nextRunAt},
+                     {"sessionKey", j.sessionKey},
+                     {"message", j.message},
+                     {"sessionTarget", j.sessionTarget},
+                     {"wakeMode", j.wakeMode},
+                     {"agentId", j.agentId},
+                     {"deleteAfterRun", j.deleteAfterRun},
+                     {"payload", {{"kind", j.payload.kind}, {"text", j.payload.text}, {"message", j.payload.text}, {"model", j.payload.model}, {"thinking", j.payload.thinking}, {"timeoutSeconds", j.payload.timeoutSeconds}}},
+                     {"delivery", {{"mode", j.delivery.mode}, {"channel", j.delivery.channel}, {"to", j.delivery.to}, {"bestEffort", j.delivery.bestEffort}}},
+                     {"enabled", j.enabled},
+                     {"consecutiveErrors", j.consecutiveErrors},
+                     {"lastRunAt", j.lastRunAt},
+                     {"lastSuccessAt", j.lastSuccessAt}});
     }
     replyJson(res, {{"ok", true}, {"jobs", arr}});
   });
+
   server_.Post("/api/cron/jobs", [&](const httplib::Request& req, httplib::Response& res) {
     const auto body = parseBody(req);
     if (body.is_discarded()) return replyJson(res, {{"ok", false}, {"error", "Invalid JSON"}}, 400);
     auto result = cron_.addJob(body);
     replyJson(res, result, result.value("ok", false) ? 200 : 400);
   });
+
+  server_.Patch(R"(/api/cron/jobs/(.+))", [&](const httplib::Request& req, httplib::Response& res) {
+    if (req.matches.size() < 2) return replyJson(res, {{"ok", false}, {"error", "job id missing"}}, 400);
+    const auto body = parseBody(req);
+    if (body.is_discarded()) return replyJson(res, {{"ok", false}, {"error", "Invalid JSON"}}, 400);
+    auto result = cron_.updateJob(req.matches[1].str(), body);
+    replyJson(res, result, result.value("ok", false) ? 200 : 400);
+  });
+
+  server_.Post(R"(/api/cron/jobs/(.+)/enable)", [&](const httplib::Request& req, httplib::Response& res) {
+    if (req.matches.size() < 2) return replyJson(res, {{"ok", false}, {"error", "job id missing"}}, 400);
+    auto result = cron_.setEnabled(req.matches[1].str(), true);
+    replyJson(res, result, result.value("ok", false) ? 200 : 404);
+  });
+
+  server_.Post(R"(/api/cron/jobs/(.+)/disable)", [&](const httplib::Request& req, httplib::Response& res) {
+    if (req.matches.size() < 2) return replyJson(res, {{"ok", false}, {"error", "job id missing"}}, 400);
+    auto result = cron_.setEnabled(req.matches[1].str(), false);
+    replyJson(res, result, result.value("ok", false) ? 200 : 404);
+  });
+
+  server_.Post(R"(/api/cron/jobs/(.+)/run)", [&](const httplib::Request& req, httplib::Response& res) {
+    if (req.matches.size() < 2) return replyJson(res, {{"ok", false}, {"error", "job id missing"}}, 400);
+    const auto body = parseBody(req);
+    if (body.is_discarded()) return replyJson(res, {{"ok", false}, {"error", "Invalid JSON"}}, 400);
+    const std::string mode = body.value("mode", "force");
+    auto result = cron_.runNow(req.matches[1].str(), mode);
+    replyJson(res, result, result.value("ok", false) ? 200 : 400);
+  });
+
+  server_.Post(R"(/api/cron/jobs/(.+)/run-now)", [&](const httplib::Request& req, httplib::Response& res) {
+    if (req.matches.size() < 2) return replyJson(res, {{"ok", false}, {"error", "job id missing"}}, 400);
+    auto result = cron_.runNow(req.matches[1].str(), "force");
+    replyJson(res, result, result.value("ok", false) ? 200 : 400);
+  });
+
+  server_.Get(R"(/api/cron/jobs/(.+)/runs)", [&](const httplib::Request& req, httplib::Response& res) {
+    if (req.matches.size() < 2) return replyJson(res, {{"ok", false}, {"error", "job id missing"}}, 400);
+    int limit = 20;
+    if (req.has_param("limit")) {
+      try {
+        limit = std::max(1, std::stoi(req.get_param_value("limit")));
+      } catch (...) {
+        limit = 20;
+      }
+    }
+    auto result = cron_.listRuns(req.matches[1].str(), limit);
+    replyJson(res, result, result.value("ok", false) ? 200 : 404);
+  });
+
   server_.Post("/api/cron/validate", [&](const httplib::Request& req, httplib::Response& res) {
     const auto body = parseBody(req);
     if (body.is_discarded()) return replyJson(res, {{"ok", false}, {"error", "Invalid JSON"}}, 400);
     auto result = cron_.validate(body);
     replyJson(res, result, result.value("ok", false) ? 200 : 400);
   });
-  server_.Post(R"(/api/cron/jobs/(.+)/run-now)", [&](const httplib::Request& req, httplib::Response& res) {
-    if (req.matches.size() < 2) return replyJson(res, {{"ok", false}, {"error", "job id missing"}}, 400);
-    auto result = cron_.runNow(req.matches[1].str());
-    replyJson(res, result, result.value("ok", false) ? 200 : 404);
-  });
+
   server_.Delete(R"(/api/cron/jobs/(.+))", [&](const httplib::Request& req, httplib::Response& res) {
     if (req.matches.size() < 2) return replyJson(res, {{"ok", false}, {"error", "job id missing"}}, 400);
     const bool removed = cron_.removeJob(req.matches[1].str());
