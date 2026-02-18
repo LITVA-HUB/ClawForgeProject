@@ -1,0 +1,76 @@
+{
+  "name": "clawforge",
+  "workspace": "./workspace",
+  "stateDir": "./state",
+  "http": {
+    "host": "127.0.0.1",
+    "port": 18890
+  },
+  "gateway": {
+    "auth": {
+      "mode": "off",
+      "tokenEnv": "CLAWFORGE_GATEWAY_TOKEN"
+    },
+    "messageQueueTimeoutMs": 15000
+  },
+  "model": {
+    "enabled": true,
+    "endpoint": "https://api.openai.com/v1/chat/completions",
+    "model": "gpt-4o-mini",
+    "apiKeyEnv": "OPENAI_API_KEY",
+    "temperature": 0.2,
+    "maxTokens": 700,
+    "systemPrompt": "Ты ClawForge, личный AI-ассистент в стиле senior engineer: отвечай по делу, коротко и полезно."
+  },
+  "telegram": {
+    "enabled": false,
+    "botTokenEnv": "TELEGRAM_BOT_TOKEN",
+    "pollIntervalMs": 1500,
+    "allowFrom": [],
+    "dmPolicy": "open"
+  },
+  "api": {
+    "dmScope": "per-channel-peer"
+  },
+  "toolsPolicy": {
+    "allow": [],
+    "deny": [],
+    "scopes": {
+      "global": {
+        "allow": [],
+        "deny": []
+      },
+      "channels": {
+        "telegram": {
+          "allow": ["read"],
+          "deny": ["exec", "write", "edit"]
+        }
+      },
+      "peers": {}
+    }
+  },
+  "browser": {
+    "enabled": true,
+    "backend": "stub",
+    "openCommand": "open",
+    "openTimeoutMs": 15000
+  },
+  "taskLane": {
+    "enabled": true,
+    "maxQueue": 256,
+    "defaultTimeoutMs": 30000
+  },
+  "rateLimit": {
+    "enabled": true,
+    "maxRequests": 120,
+    "windowMs": 60000
+  },
+  "audit": {
+    "enabled": true,
+    "file": "./state/audit/events.jsonl"
+  },
+  "cron": {
+    "enabled": true,
+    "tickMs": 1000
+  }
+}

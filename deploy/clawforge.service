@@ -1,0 +1,15 @@
+[Unit]
+Description=ClawForge gateway
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/clawforge
+ExecStart=%h/clawforge/build/clawforge run --config %h/clawforge/config/config.json
+Restart=on-failure
+RestartSec=2
+Environment=OPENAI_API_KEY=
+Environment=CLAWFORGE_GATEWAY_TOKEN=
+
+[Install]
+WantedBy=multi-user.target

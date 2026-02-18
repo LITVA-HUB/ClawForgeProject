@@ -1,0 +1,16 @@
+build/
+build*/
+cmake-build-*/
+
+# Runtime state (keep only .gitkeep files)
+state/sessions/*.jsonl
+state/sessions/sessions.json
+state/cron/jobs.json
+state/telegram/pairing.json
+state/tasks/tasks.json
+state/audit/events.jsonl
+
+.DS_Store
+.vscode/
+.idea/
+.env
