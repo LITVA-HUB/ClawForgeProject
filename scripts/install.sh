@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_URL="https://github.com/LITVA-HUB/ClawForgeProject.git"
 BRANCH="main"
-INSTALL_DIR="${HOME}/.local/share/clawforge"
+INSTALL_DIR="${HOME}/.local/share/nexaclaw"
 BIN_DIR="${HOME}/.local/bin"
 SYSTEM=0
 DRY_RUN=0
@@ -13,7 +13,7 @@ PIN_COMMIT=""
 
 usage() {
   cat <<'EOF'
-ClawForge one-command installer
+NexaClaw one-command installer
 
 Usage:
   scripts/install.sh [options]
@@ -22,11 +22,11 @@ Options:
   --repo <url>         Git repository URL (default: official GitHub repo)
   --branch <name>      Git branch/tag to install (default: main)
   --pin-commit <sha>   Optional commit pin; verifies checkout exactly to SHA
-  --dir <path>         Install/update source dir (default: ~/.local/share/clawforge)
+  --dir <path>         Install/update source dir (default: ~/.local/share/nexaclaw)
   --bin-dir <path>     User binary dir (default: ~/.local/bin)
   --system             Install binary to /usr/local/bin (requires sudo)
-  --update             Update existing clone only (fails if not installed yet)
-  --validate           Validate local environment (git/cmake/compiler/bash); no changes
+  --update             Update existing install only (fails if clone is missing)
+  --validate           Check prerequisites only (no changes)
   --dry-run            Print planned actions without changing system
   -h, --help           Show this help
 
@@ -34,7 +34,7 @@ What script does:
   1) clone repo or fetch/update existing clone
   2) checkout branch (or pin commit if provided)
   3) configure and build with CMake
-  4) copy built binary to bin dir (user or system)
+  4) install nexaclaw binary (+ clawforge compatibility alias)
 
 Security notes:
   - Prefer --pin-commit for reproducible installs
@@ -50,34 +50,6 @@ run() {
   else
     eval "$*"
   fi
-}
-
-need_cmd() {
-  local c="$1"
-  if ! command -v "$c" >/dev/null 2>&1; then
-    echo "Missing required command: $c" >&2
-    return 1
-  fi
-  return 0
-}
-
-validate_env() {
-  local ok=0
-  need_cmd bash || ok=1
-  need_cmd git || ok=1
-  need_cmd cmake || ok=1
-  if command -v c++ >/dev/null 2>&1 || command -v clang++ >/dev/null 2>&1 || command -v g++ >/dev/null 2>&1; then
-    :
-  else
-    echo "Missing C++ compiler (c++/clang++/g++)" >&2
-    ok=1
-  fi
-  if [[ "$ok" -eq 0 ]]; then
-    log "Validation OK"
-  else
-    log "Validation FAILED"
-  fi
-  return "$ok"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -106,19 +78,36 @@ log "branch=$BRANCH"
 log "install_dir=$INSTALL_DIR"
 log "bin_dir=$BIN_DIR"
 
-validate_env
-
 if [[ "$VALIDATE_ONLY" -eq 1 ]]; then
-  log "Validate-only mode: no changes applied"
+  log "validate-only mode: checking prerequisites"
+  missing=0
+  for cmd in git cmake; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      echo "[validate] missing command: $cmd" >&2
+      missing=1
+    else
+      echo "[validate] ok: $cmd"
+    fi
+  done
+  if command -v c++ >/dev/null 2>&1 || command -v clang++ >/dev/null 2>&1 || command -v g++ >/dev/null 2>&1; then
+    echo "[validate] ok: C++ compiler"
+  else
+    echo "[validate] missing: C++ compiler (c++/clang++/g++)" >&2
+    missing=1
+  fi
+
+  if [[ "$missing" -ne 0 ]]; then
+    exit 1
+  fi
+  log "validate-only checks passed"
   exit 0
 fi
 
-if [[ "$UPDATE_ONLY" -eq 1 && ! -d "$INSTALL_DIR/.git" ]]; then
-  echo "--update requested but install dir is not a git clone: $INSTALL_DIR" >&2
-  exit 1
-fi
-
 if [[ ! -d "$INSTALL_DIR/.git" ]]; then
+  if [[ "$UPDATE_ONLY" -eq 1 ]]; then
+    echo "--update requested but install dir is missing: $INSTALL_DIR" >&2
+    exit 1
+  fi
   run "mkdir -p $(printf %q "$(dirname "$INSTALL_DIR")")"
   run "git clone --branch $(printf %q "$BRANCH") --depth 1 $(printf %q "$REPO_URL") $(printf %q "$INSTALL_DIR")"
 else
@@ -143,14 +132,44 @@ fi
 run "cmake -S $(printf %q "$INSTALL_DIR") -B $(printf %q "$INSTALL_DIR/build")"
 run "cmake --build $(printf %q "$INSTALL_DIR/build") -j"
 
+BIN_SRC_NEXA="$INSTALL_DIR/build/nexaclaw"
+BIN_SRC_COMPAT="$INSTALL_DIR/build/clawforge"
+
 if [[ "$SYSTEM" -eq 1 ]]; then
-  run "sudo install -m 0755 $(printf %q "$INSTALL_DIR/build/clawforge") /usr/local/bin/clawforge"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    run "sudo install -m 0755 $(printf %q "$BIN_SRC_NEXA") /usr/local/bin/nexaclaw"
+    run "sudo ln -sfn /usr/local/bin/nexaclaw /usr/local/bin/clawforge"
+  else
+    if [[ ! -x "$BIN_SRC_NEXA" ]]; then
+      echo "Missing binary: $BIN_SRC_NEXA" >&2
+      exit 1
+    fi
+    sudo install -m 0755 "$BIN_SRC_NEXA" /usr/local/bin/nexaclaw
+    sudo ln -sfn /usr/local/bin/nexaclaw /usr/local/bin/clawforge
+  fi
 else
   run "mkdir -p $(printf %q "$BIN_DIR")"
-  run "install -m 0755 $(printf %q "$INSTALL_DIR/build/clawforge") $(printf %q "$BIN_DIR/clawforge")"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    run "install -m 0755 $(printf %q "$BIN_SRC_NEXA") $(printf %q "$BIN_DIR/nexaclaw")"
+    run "ln -sfn $(printf %q "$BIN_DIR/nexaclaw") $(printf %q "$BIN_DIR/clawforge")"
+  else
+    if [[ ! -x "$BIN_SRC_NEXA" ]]; then
+      echo "Missing binary: $BIN_SRC_NEXA" >&2
+      if [[ -x "$BIN_SRC_COMPAT" ]]; then
+        echo "Found compatibility binary, installing it as nexaclaw" >&2
+        install -m 0755 "$BIN_SRC_COMPAT" "$BIN_DIR/nexaclaw"
+      else
+        exit 1
+      fi
+    else
+      install -m 0755 "$BIN_SRC_NEXA" "$BIN_DIR/nexaclaw"
+    fi
+    ln -sfn "$BIN_DIR/nexaclaw" "$BIN_DIR/clawforge"
+  fi
 fi
 
-log "Done. Binary: $BIN_DIR/clawforge"
+log "Done. Binary: $BIN_DIR/nexaclaw"
+log "Compatibility alias: $BIN_DIR/clawforge"
 if [[ "$SYSTEM" -eq 0 ]]; then
   log "Ensure $BIN_DIR is in PATH"
 fi

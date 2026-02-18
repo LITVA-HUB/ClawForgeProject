@@ -9,6 +9,7 @@ state/cron/jobs.json
 state/telegram/pairing.json
 state/tasks/tasks.json
 state/audit/events.jsonl
+state/models/auth-profiles.json
 
 .DS_Store
 .vscode/

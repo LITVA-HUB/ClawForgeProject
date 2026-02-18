@@ -1,8 +1,8 @@
-# ClawForge
+# NexaClaw
 
 **Практичный self-hosted AI gateway на C++** (архитектурно в духе OpenClaw, но как лёгкое ядро).
 
-ClawForge — это локальный control plane: сессии, tools, cron, Telegram baseline, realtime-события, очередь задач, security-ограничения и ops-скрипты.
+NexaClaw — это локальный control plane: сессии, tools, cron, Telegram baseline, realtime-события, очередь задач, security-ограничения и ops-скрипты.
 
 - 🇬🇧 English README: [README.md](./README.md)
 - Матрица parity: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
@@ -45,7 +45,7 @@ cp config/config.example.json config/config.json
 export OPENAI_API_KEY="<твой_ключ>"
 
 scripts/bootstrap.sh
-./build/clawforge run --config config/config.json
+./build/nexaclaw run --config config/config.json
 ```
 
 Проверка:
@@ -57,6 +57,8 @@ curl -s http://127.0.0.1:18890/health
 ---
 
 ## Установка одной командой
+
+> Важно: бренд уже **NexaClaw**, но GitHub-репозиторий пока оставлен с legacy-именем `ClawForgeProject` ради совместимости миграции.
 
 Пользовательская установка (рекомендуется):
 
@@ -93,7 +95,7 @@ bash scripts/install.sh --validate
 ```
 
 Заметки по безопасности:
-- Скрипт клонирует/обновляет репозиторий, собирает через CMake и ставит бинарь `clawforge`.
+- Скрипт клонирует/обновляет репозиторий, собирает через CMake и ставит бинарь `nexaclaw`.
 - `--update` обновляет существующий клон и переустанавливает бинарь.
 - `--validate` только проверяет зависимости и не вносит изменения.
 - Для воспроизводимости используй `--pin-commit`.
@@ -102,23 +104,23 @@ bash scripts/install.sh --validate
 ## CLI шпаргалка
 
 ```bash
-./build/clawforge --help
-./build/clawforge --doctor --config config/config.json
-./build/clawforge status --config config/config.json
-./build/clawforge cron list --config config/config.json
-./build/clawforge tools list --config config/config.json
-./build/clawforge pairing list --config config/config.json
-./build/clawforge pairing approve <code> --config config/config.json
-./build/clawforge models list --config config/config.json
-./build/clawforge models status --config config/config.json
-./build/clawforge models set anthropic/claude-3-5-haiku-latest --config config/config.json
-./build/clawforge models aliases add fast anthropic/claude-3-5-haiku-latest --config config/config.json
-./build/clawforge models fallbacks add openai/gpt-4o-mini --config config/config.json
-./build/clawforge models auth add --provider openai --profile-id work --api-key-env OPENAI_API_KEY --config config/config.json
-./build/clawforge models auth use --provider openai --profile-id work --config config/config.json
-./build/clawforge models auth setup-token --provider openai-codex --profile-id codex --token <token> --expires-in 3600 --config config/config.json
-./build/clawforge config get model.current --config config/config.json
-./build/clawforge config set model.current fast --config config/config.json
+./build/nexaclaw --help
+./build/nexaclaw --doctor --config config/config.json
+./build/nexaclaw status --config config/config.json
+./build/nexaclaw cron list --config config/config.json
+./build/nexaclaw tools list --config config/config.json
+./build/nexaclaw pairing list --config config/config.json
+./build/nexaclaw pairing approve <code> --config config/config.json
+./build/nexaclaw models list --config config/config.json
+./build/nexaclaw models status --config config/config.json
+./build/nexaclaw models set anthropic/claude-3-5-haiku-latest --config config/config.json
+./build/nexaclaw models aliases add fast anthropic/claude-3-5-haiku-latest --config config/config.json
+./build/nexaclaw models fallbacks add openai/gpt-4o-mini --config config/config.json
+./build/nexaclaw models auth add --provider openai --profile-id work --api-key-env OPENAI_API_KEY --config config/config.json
+./build/nexaclaw models auth use --provider openai --profile-id work --config config/config.json
+./build/nexaclaw models auth setup-token --provider openai-codex --profile-id codex --token <token> --expires-in 3600 --config config/config.json
+./build/nexaclaw config get model.current --config config/config.json
+./build/nexaclaw config set model.current fast --config config/config.json
 ```
 
 ## Multi-model маршрутизация
@@ -126,11 +128,11 @@ bash scripts/install.sh --validate
 `modelsConfig` поддерживает `providers/models/routing`:
 - baseline-провайдеры: `openai`, `anthropic`, `openrouter`, `gemini`, `minimax`
 - routing: `current` + `aliases` + `fallbacks`
-- если API формат провайдера несовместим, ClawForge возвращает честную diagnostic-ошибку.
+- если API формат провайдера несовместим, NexaClaw возвращает честную diagnostic-ошибку.
 
 ## OpenClaw compatibility
 
-В Stage 10 ClawForge получил практичный parity CLI для ключевых OpenClaw-сценариев.
+В Stage 10 NexaClaw получил практичный parity CLI для ключевых OpenClaw-сценариев.
 
 ### 1:1 или почти 1:1
 - `status`, `health`, `doctor`, `sessions`
@@ -143,22 +145,22 @@ bash scripts/install.sh --validate
 - `config get/set` (расширено покрытие ключей)
 - `logs tail`, `system event`, `pairing list|approve`
 
-### Migration guide (OpenClaw -> ClawForge)
-- `openclaw browser status` -> `clawforge browser status`
-- `openclaw browser open <url>` -> `clawforge browser open <url>`
-- `openclaw cron add --json ...` -> `clawforge cron add --json ...`
-- `openclaw tools call <name> --json ...` -> `clawforge tools call <name> --json ...`
-- `openclaw models probe` -> `clawforge models probe`
-- `openclaw models set-image <model>` -> `clawforge models set-image <model>`
-- `openclaw image-fallbacks ...` -> `clawforge image-fallbacks ...`
+### Migration guide (OpenClaw -> NexaClaw)
+- `openclaw browser status` -> `nexaclaw browser status`
+- `openclaw browser open <url>` -> `nexaclaw browser open <url>`
+- `openclaw cron add --json ...` -> `nexaclaw cron add --json ...`
+- `openclaw tools call <name> --json ...` -> `nexaclaw tools call <name> --json ...`
+- `openclaw models probe` -> `nexaclaw models probe`
+- `openclaw models set-image <model>` -> `nexaclaw models set-image <model>`
+- `openclaw image-fallbacks ...` -> `nexaclaw image-fallbacks ...`
 
 Полная матрица (`implemented` / `partial` / `stub` / `impossible-now`) — в `docs/CLI_PARITY.md`.
 
 Язык CLI:
 
 ```bash
-./build/clawforge --lang ru --help
-./build/clawforge --lang en --help
+./build/nexaclaw --lang ru --help
+./build/nexaclaw --lang en --help
 ```
 
 ---
@@ -242,8 +244,8 @@ scripts/benchmark_quick.sh 50
 
 ## Шаблоны сервисов
 
-- systemd: `deploy/clawforge.service`
-- launchd: `deploy/com.clawforge.agent.plist`
+- systemd: `deploy/nexaclaw.service`
+- launchd: `deploy/com.nexaclaw.agent.plist`
 
 ---
 

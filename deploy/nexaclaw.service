@@ -1,5 +1,5 @@
 [Unit]
-Description=Legacy compatibility service for NexaClaw
+Description=NexaClaw gateway
 After=network-online.target
 
 [Service]

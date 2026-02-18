@@ -19,7 +19,7 @@ struct ModelConfig {
   std::string apiKeyEnv{"OPENAI_API_KEY"};
   double temperature{0.2};
   int maxTokens{700};
-  std::string systemPrompt{"You are ClawForge, a concise engineering assistant."};
+  std::string systemPrompt{"You are NexaClaw, a concise engineering assistant."};
 };
 
 struct TelegramConfig {
@@ -110,7 +110,7 @@ struct ModelRoutingConfig {
 };
 
 struct AppConfig {
-  std::string name{"clawforge"};
+  std::string name{"nexaclaw"};
   std::filesystem::path workspace{"./workspace"};
   std::filesystem::path stateDir{"./state"};
   HttpConfig http;

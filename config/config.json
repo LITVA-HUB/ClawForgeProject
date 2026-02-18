@@ -1,10 +1,20 @@
 {
-  "name": "clawforge",
-  "workspace": "./workspace",
-  "stateDir": "./state",
-  "http": {
-    "host": "127.0.0.1",
-    "port": 18890
+  "api": {
+    "dmScope": "main"
+  },
+  "audit": {
+    "enabled": true,
+    "file": "./state/audit/events.jsonl"
+  },
+  "browser": {
+    "backend": "stub",
+    "enabled": true,
+    "openCommand": "open",
+    "openTimeoutMs": 15000
+  },
+  "cron": {
+    "enabled": true,
+    "tickMs": 1000
   },
   "gateway": {
     "auth": {
@@ -13,85 +23,123 @@
     },
     "messageQueueTimeoutMs": 15000
   },
+  "http": {
+    "host": "127.0.0.1",
+    "port": 18890
+  },
   "model": {
+    "apiKeyEnv": "OPENAI_API_KEY",
     "enabled": true,
     "endpoint": "https://api.openai.com/v1/chat/completions",
-    "model": "gpt-4o-mini",
-    "apiKeyEnv": "OPENAI_API_KEY",
-    "temperature": 0.2,
     "maxTokens": 700,
-    "systemPrompt": "Ты ClawForge, личный AI-ассистент в стиле senior engineer: отвечай по делу, коротко и полезно."
+    "model": "gpt-4o-mini",
+    "systemPrompt": "Ты NexaClaw, личный AI-ассистент в стиле senior engineer: отвечай по делу, коротко и полезно.",
+    "temperature": 0.2
   },
   "modelsConfig": {
-    "providers": {
-      "openai": {"endpoint": "https://api.openai.com/v1/chat/completions", "apiKeyEnv": "OPENAI_API_KEY", "apiStyle": "openai_chat"},
-      "anthropic": {"endpoint": "https://api.anthropic.com/v1/messages", "apiKeyEnv": "ANTHROPIC_API_KEY", "apiStyle": "anthropic_messages"},
-      "openrouter": {"endpoint": "https://openrouter.ai/api/v1/chat/completions", "apiKeyEnv": "OPENROUTER_API_KEY", "apiStyle": "openai_chat"},
-      "gemini": {"endpoint": "https://generativelanguage.googleapis.com/v1beta/models", "apiKeyEnv": "GEMINI_API_KEY", "apiStyle": "gemini_generate_content"},
-      "minimax": {"endpoint": "https://api.minimax.io/v1/text/chatcompletion_v2", "apiKeyEnv": "MINIMAX_API_KEY", "apiStyle": "openai_chat"}
-    },
     "models": {
-      "openai/gpt-4o-mini": {"provider": "openai", "model": "gpt-4o-mini"},
-      "anthropic/claude-3-5-haiku-latest": {"provider": "anthropic", "model": "claude-3-5-haiku-latest"},
-      "openrouter/openai/gpt-4o-mini": {"provider": "openrouter", "model": "openai/gpt-4o-mini"},
-      "gemini/gemini-1.5-flash": {"provider": "gemini", "model": "gemini-1.5-flash"},
-      "minimax/abab6.5-chat": {"provider": "minimax", "model": "abab6.5-chat"}
+      "anthropic/claude-3-5-haiku-latest": {
+        "model": "claude-3-5-haiku-latest",
+        "provider": "anthropic"
+      },
+      "gemini/gemini-1.5-flash": {
+        "model": "gemini-1.5-flash",
+        "provider": "gemini"
+      },
+      "minimax/abab6.5-chat": {
+        "model": "abab6.5-chat",
+        "provider": "minimax"
+      },
+      "openai/gpt-4o-mini": {
+        "model": "gpt-4o-mini",
+        "provider": "openai"
+      },
+      "openrouter/openai/gpt-4o-mini": {
+        "model": "openai/gpt-4o-mini",
+        "provider": "openrouter"
+      }
+    },
+    "providers": {
+      "anthropic": {
+        "apiKeyEnv": "ANTHROPIC_API_KEY",
+        "apiStyle": "anthropic_messages",
+        "endpoint": "https://api.anthropic.com/v1/messages"
+      },
+      "gemini": {
+        "apiKeyEnv": "GEMINI_API_KEY",
+        "apiStyle": "gemini_generate_content",
+        "endpoint": "https://generativelanguage.googleapis.com/v1beta/models"
+      },
+      "minimax": {
+        "apiKeyEnv": "MINIMAX_API_KEY",
+        "apiStyle": "openai_chat",
+        "endpoint": "https://api.minimax.io/v1/text/chatcompletion_v2"
+      },
+      "openai": {
+        "apiKeyEnv": "OPENAI_API_KEY",
+        "apiStyle": "openai_chat",
+        "endpoint": "https://api.openai.com/v1/chat/completions"
+      },
+      "openrouter": {
+        "apiKeyEnv": "OPENROUTER_API_KEY",
+        "apiStyle": "openai_chat",
+        "endpoint": "https://openrouter.ai/api/v1/chat/completions"
+      }
     },
     "routing": {
+      "aliases": {
+        "default": "openai/gpt-4o-mini",
+        "fast": "openai/gpt-4o-mini"
+      },
       "current": "openai/gpt-4o-mini",
-      "aliases": {"default": "openai/gpt-4o-mini", "fast": "openai/gpt-4o-mini"},
-      "fallbacks": ["anthropic/claude-3-5-haiku-latest"]
+      "fallbacks": [
+        "anthropic/claude-3-5-haiku-latest"
+      ],
+      "image": "openai/gpt-image-1",
+      "imageFallbacks": []
     }
   },
-  "telegram": {
-    "enabled": false,
-    "botTokenEnv": "TELEGRAM_BOT_TOKEN",
-    "pollIntervalMs": 1500,
-    "allowFrom": [],
-    "dmPolicy": "open"
-  },
-  "api": {
-    "dmScope": "per-channel-peer"
-  },
-  "toolsPolicy": {
-    "allow": [],
-    "deny": [],
-    "scopes": {
-      "global": {
-        "allow": [],
-        "deny": []
-      },
-      "channels": {
-        "telegram": {
-          "allow": ["read"],
-          "deny": ["exec", "write", "edit"]
-        }
-      },
-      "peers": {}
-    }
-  },
-  "browser": {
-    "enabled": true,
-    "backend": "stub",
-    "openCommand": "open",
-    "openTimeoutMs": 15000
-  },
-  "taskLane": {
-    "enabled": true,
-    "maxQueue": 256,
-    "defaultTimeoutMs": 30000
-  },
+  "name": "nexaclaw",
   "rateLimit": {
     "enabled": true,
     "maxRequests": 120,
     "windowMs": 60000
   },
-  "audit": {
+  "stateDir": "./state",
+  "taskLane": {
+    "defaultTimeoutMs": 30000,
     "enabled": true,
-    "file": "./state/audit/events.jsonl"
+    "maxQueue": 256
   },
-  "cron": {
-    "enabled": true,
-    "tickMs": 1000
-  }
+  "telegram": {
+    "allowFrom": [],
+    "botTokenEnv": "TELEGRAM_BOT_TOKEN",
+    "dmPolicy": "open",
+    "enabled": false,
+    "pollIntervalMs": 1500
+  },
+  "toolsPolicy": {
+    "allow": [],
+    "deny": [],
+    "scopes": {
+      "channels": {
+        "telegram": {
+          "allow": [
+            "read"
+          ],
+          "deny": [
+            "exec",
+            "write",
+            "edit"
+          ]
+        }
+      },
+      "global": {
+        "allow": [],
+        "deny": []
+      },
+      "peers": {}
+    }
+  },
+  "workspace": "./workspace"
 }

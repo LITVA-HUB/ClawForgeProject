@@ -66,8 +66,8 @@ std::optional<std::string> argValue(const std::vector<std::string>& pos, const s
 
 void printHelp(const std::string& lang) {
   const bool ru = (lang == "ru");
-  std::cout << (ru ? "ClawForge CLI\n\n" : "ClawForge CLI\n\n");
-  std::cout << "Usage:\n  clawforge [run] [--config <path>]\n  clawforge status|health|doctor|sessions\n  clawforge cron list\n  clawforge tools list\n  clawforge pairing list|approve <code>\n  clawforge config get <key>|set <key> <value>\n  clawforge models list|status|probe|set <provider/model|alias>\n  clawforge models aliases list|add|remove\n  clawforge models fallbacks list|add|remove|clear\n  clawforge models auth list|add|paste-token|setup-token|use|remove\n";
+  std::cout << (ru ? "NexaClaw CLI (alias: clawforge)\n\n" : "NexaClaw CLI (alias: clawforge)\n\n");
+  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw cron list\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|paste-token|setup-token|use|remove\n";
   std::cout << (ru ? "\nСовместимость OpenClaw: неизвестные top-level ветки отдаются как compatibility stub вместо unknown (см. docs/CLI_PARITY.md).\n"
                    : "\nOpenClaw compatibility: unknown top-level branches return compatibility stubs instead of hard unknown (see docs/CLI_PARITY.md).\n");
 }
@@ -98,7 +98,7 @@ int initConfig(const std::string& configPath, const std::string& lang) {
   std::filesystem::create_directories(dst.parent_path()); std::filesystem::copy_file(src, dst); std::cout << "Created config: " << dst.string() << std::endl; return 0;
 }
 
-int runStatus(const std::string& configPath, const std::string& lang) {
+int runStatus(const std::string& configPath, [[maybe_unused]] const std::string& lang) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath); const std::string baseUrl = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
   const auto remote = httpGetJson(baseUrl + "/api/status", authHeaderFromEnv(cfg)); if (remote.has_value() && remote->value("ok", false)) { std::cout << remote->dump(2) << std::endl; return 0; }
   clawforge::session::SessionStore sessions(cfg.stateDir); sessions.init(); clawforge::core::EventBus bus; clawforge::automation::CronScheduler cron(cfg.stateDir, cfg.cron.tickMs, [](const auto&) {}, bus); cron.init(); clawforge::tools::ToolRegistry tools; clawforge::tools::registerBuiltinTools(tools, cfg.workspace); tools.setPolicy(cfg.toolsPolicy);

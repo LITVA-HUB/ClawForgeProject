@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.clawforge.agent.legacy</string>
+  <string>com.nexaclaw.agent</string>
   <key>ProgramArguments</key>
   <array>
     <string>/Users/you/nexaclaw/build/nexaclaw</string>

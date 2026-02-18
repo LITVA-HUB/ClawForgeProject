@@ -8,8 +8,8 @@
   - workspace/state existence + state write permissions
   - browser backend readiness diagnostic
 - Service templates:
-  - `deploy/clawforge.service` (systemd)
-  - `deploy/com.clawforge.agent.plist` (launchd)
+  - `deploy/nexaclaw.service` (systemd)
+  - `deploy/com.nexaclaw.agent.plist` (launchd)
 - Scripts:
   - `scripts/bootstrap.sh`
   - `scripts/smoke_full.sh`

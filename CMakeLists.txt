@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ClawForge VERSION 0.1.0 LANGUAGES CXX)
+project(NexaClaw VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,26 +21,34 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(nlohmann_json cpp_httplib)
 
-file(GLOB_RECURSE CLAWFORGE_SOURCES CONFIGURE_DEPENDS src/*.cpp)
+file(GLOB_RECURSE NEXACLAW_SOURCES CONFIGURE_DEPENDS src/*.cpp)
 
-add_executable(clawforge ${CLAWFORGE_SOURCES})
+function(configure_nexa_target target_name)
+  target_include_directories(${target_name}
+    PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/include
+      ${cpp_httplib_SOURCE_DIR}
+  )
 
-target_include_directories(clawforge
-  PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${cpp_httplib_SOURCE_DIR}
-)
+  target_link_libraries(${target_name}
+    PRIVATE
+      nlohmann_json::nlohmann_json
+      Threads::Threads
+  )
 
-target_link_libraries(clawforge
-  PRIVATE
-    nlohmann_json::nlohmann_json
-)
+  if(APPLE)
+    target_compile_definitions(${target_name} PRIVATE _DARWIN_C_SOURCE)
+  endif()
+endfunction()
 
 find_package(Threads REQUIRED)
-target_link_libraries(clawforge PRIVATE Threads::Threads)
 
-if(APPLE)
-  target_compile_definitions(clawforge PRIVATE _DARWIN_C_SOURCE)
-endif()
+# Primary binary (new branding)
+add_executable(nexaclaw ${NEXACLAW_SOURCES})
+configure_nexa_target(nexaclaw)
 
-install(TARGETS clawforge DESTINATION bin)
+# Backward-compatibility alias binary
+add_executable(clawforge ${NEXACLAW_SOURCES})
+configure_nexa_target(clawforge)
+
+install(TARGETS nexaclaw clawforge DESTINATION bin)

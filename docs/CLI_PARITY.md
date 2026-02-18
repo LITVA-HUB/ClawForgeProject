@@ -1,21 +1,21 @@
-# CLI Parity Matrix (OpenClaw docs audit -> ClawForge Stage 11)
+# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 11)
 
 Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
 ## Legend
-- **implemented** — command works in ClawForge CLI now
+- **implemented** — command works in NexaClaw CLI now
 - **partial** — command exists, but reduced behavior / baseline only
 - **stub** — compatibility branch exists and returns explicit `not implemented yet`
-- **impossible-now** — not realistically implementable in current ClawForge scope (requires OpenClaw-native infra/UI/ecosystem)
+- **impossible-now** — not realistically implementable in current NexaClaw scope (requires OpenClaw-native infra/UI/ecosystem)
 
 ## Top-level parity (from OpenClaw CLI docs)
 
-| OpenClaw top-level | Key subcommands in OpenClaw docs | ClawForge status | ClawForge mapping / note |
+| OpenClaw top-level | Key subcommands in OpenClaw docs | NexaClaw status | NexaClaw mapping / note |
 |---|---|---|---|
-| `status` | `status` | implemented | `clawforge status` |
-| `health` | `health` | implemented | `clawforge health` |
-| `doctor` | `doctor` | implemented | `clawforge doctor` / `--doctor` |
-| `sessions` | list/show/ops | partial | `clawforge sessions` list baseline |
+| `status` | `status` | implemented | `nexaclaw status` |
+| `health` | `health` | implemented | `nexaclaw health` |
+| `doctor` | `doctor` | implemented | `nexaclaw doctor` / `--doctor` |
+| `sessions` | list/show/ops | partial | `nexaclaw sessions` list baseline |
 | `cron` | list/add/rm/run/validate | implemented | all baseline ops in CLI + local fallback |
 | `tools` | list/call | implemented | `tools list`, `tools call <name> --json <payload>` |
 | `browser` | status/open/snapshot/... | partial | `status|open|snapshot` implemented; snapshot still diagnostic baseline |
@@ -34,7 +34,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `channels` | channel providers mgmt | stub | not mapped yet |
 | `dashboard` | dashboard/ui | impossible-now | OpenClaw UI stack |
 | `devices` | devices control | stub | not mapped yet |
-| `directory` | identity/directory | impossible-now | no directory backend in ClawForge |
+| `directory` | identity/directory | impossible-now | no directory backend in NexaClaw |
 | `dns` | dns ops | stub | not mapped yet |
 | `docs` | docs tooling | stub | not mapped yet |
 | `hooks` | hooks ops | stub | not mapped yet |
@@ -91,7 +91,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
 ## Stage 11 summary
 - Focus for this sprint: deep practical parity on frequently-used operational CLI branches.
-- Where full OpenClaw feature equivalence is impossible now, ClawForge returns explicit baseline diagnostics instead of silent gaps.
+- Where full OpenClaw feature equivalence is impossible now, NexaClaw returns explicit baseline diagnostics instead of silent gaps.
 
 
 ### OAuth parity note

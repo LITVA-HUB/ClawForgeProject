@@ -49,8 +49,8 @@
 ## CLI pairing
 
 ```bash
-./build/clawforge pairing list --config config/config.json
-./build/clawforge pairing approve ABC123 --config config/config.json
+./build/nexaclaw pairing list --config config/config.json
+./build/nexaclaw pairing approve ABC123 --config config/config.json
 ```
 
 ## curl examples

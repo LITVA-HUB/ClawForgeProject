@@ -1,15 +1,15 @@
-# PARITY ROADMAP (ClawForge vs OpenClaw)
+# PARITY ROADMAP (NexaClaw vs OpenClaw)
 
 > Updated after Stage 11.
 
 ## Practical parity matrix
 
-| Area | OpenClaw | ClawForge (Stage 9) | Status | Notes |
+| Area | OpenClaw | NexaClaw (Stage 11) | Status | Notes |
 |---|---|---|---|---|
 | HTTP API `/health`, `/api/message`, `/api/status` | ✅ | ✅ | Closed | Stable local gateway |
 | Session store | ✅ | ✅ | Closed | File-backed sessions |
 | Tools registry + scoped policy | ✅ | ✅ | Closed | global/channel/peer policy |
-| Cron jobs (`every`, `at`, `cron`) | ✅ | ⚠️ | Partial | API complete baseline, CLI `cron list` |
+| Cron jobs (`every`, `at`, `cron`) | ✅ | ✅ | Closed (baseline) | CLI + API (`list/add/rm/run/validate`) |
 | CLI UX + doctor | ✅ | ✅ | Closed | RU/EN + compatibility dispatcher |
 | Multi-model providers + aliases + fallbacks | ✅ | ✅ | Closed (baseline) | openai/anthropic/openrouter/gemini/minimax |
 | Models auth parity beyond API keys | ✅ | ⚠️ | Partial (Stage 11 baseline) | local auth profiles + manual OAuth token setup; no device-code flow yet |

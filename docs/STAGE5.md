@@ -26,9 +26,9 @@
    - `TelegramBot` → `inbound_message`, `assistant_reply`, `error`
 
 4. **Новые CLI команды**
-   - `clawforge status`
-   - `clawforge cron list`
-   - `clawforge tools list`
+   - `nexaclaw status`
+   - `nexaclaw cron list`
+   - `nexaclaw tools list`
 
    Поведение:
    - сначала пробует HTTP API (с авторизацией по config/env)
@@ -51,9 +51,9 @@ curl -N http://127.0.0.1:18890/api/events/stream \
   -H "Authorization: Bearer $CLAWFORGE_GATEWAY_TOKEN"
 
 # New CLI
-./build/clawforge status
-./build/clawforge cron list
-./build/clawforge tools list
+./build/nexaclaw status
+./build/nexaclaw cron list
+./build/nexaclaw tools list
 ```
 
 ## Совместимость
