@@ -110,7 +110,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - `models set-image` — **implemented** (config op baseline)
 - `models auth list|add|paste-token|setup-token|login|use|remove` — **implemented baseline**
 - `models auth order get|set|clear` — **implemented baseline**
-- login note: current `models auth login --provider openai-codex` uses OpenClaw login bridge + import to NexaClaw auth store
+- login note: `models auth login --provider openai-codex` now defaults to native device-code baseline (`--device-code-json`, optional `--poll`), with OpenClaw bridge available via `--bridge-import` (or legacy bridge flags)
 - `image-fallbacks list|add|remove|clear` — **implemented**
 
 ### Logs/System
@@ -139,9 +139,16 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - Where full OpenClaw feature equivalence is still impossible now, NexaClaw returns explicit diagnostics and scope limits instead of silent gaps.
 
 ### OAuth parity note
-- `models auth login --provider openai-codex` now exists as a practical baseline via OpenClaw login/import bridge.
-- Native NexaClaw device-code OAuth runtime is still not implemented (next gap).
+- Native NexaClaw device-code login/poll baseline is implemented for `openai-codex`.
+- OpenClaw login/import bridge remains available for backward compatibility (`--bridge-import`).
+- Remaining gap: direct device-code *issuance/start* endpoint orchestration in NexaClaw (today baseline consumes provided device-code payload).
 
 ### Installer parity note
 - Added `scripts/install.sh` one-command installer (clone/update/build/install).
 - Supports `--dry-run`, `--pin-commit`, and `--system` for safer operational usage.
+
+## Stage 17 summary (slice 1)
+- Added native OAuth device-code baseline in NexaClaw for `models auth login --provider openai-codex`.
+- New non-interactive flags: `--device-code-json <json|@file>` and `--poll` (plus `--client-id`, `--token-url`).
+- Legacy OpenClaw import path kept for compatibility and can be forced with `--bridge-import` (or legacy bridge flags).
+- Poll flow returns explicit JSON for retryable (`authorization_pending`, `slow_down`) and terminal errors.

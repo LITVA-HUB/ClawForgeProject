@@ -1,10 +1,10 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 16 browser/oauth/message uplift baseline.
+> Updated after Stage 17 slice 1 (native OAuth device-code baseline).
 
 ## Practical parity matrix
 
-| Area | OpenClaw | NexaClaw (Stage 16) | Status | Notes |
+| Area | OpenClaw | NexaClaw (Stage 17-s1) | Status | Notes |
 |---|---|---|---|---|
 | HTTP API `/health`, `/api/message`, `/api/status` | ✅ | ✅ | Closed | Stable local gateway |
 | Session store | ✅ | ✅ | Closed | File-backed sessions |
@@ -17,7 +17,7 @@
 | Message command/action surface | ✅ | ⚠️ | Partial (Stage 16 baseline) | telegram `send/react/delete/poll` + strict target validation + dry-run |
 | Channels command family | ✅ | ⚠️ | Partial (Stage 15 baseline) | `channels list/status/capabilities/resolve/add/remove` (telegram baseline) |
 | Multi-model providers + aliases + fallbacks | ✅ | ✅ | Closed (baseline) | openai/anthropic/openrouter/gemini/minimax |
-| Models auth parity beyond API keys | ✅ | ⚠️ | Partial (Stage 16 baseline) | `login` import bridge + `auth order`, still no native device-code runtime inside NexaClaw |
+| Models auth parity beyond API keys | ✅ | ⚠️ | Partial (Stage 17 slice 1) | Native device-code login/poll baseline for `openai-codex` + legacy OpenClaw import bridge fallback |
 | OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + explicit stubs for not-yet branches |
 | Telegram channel baseline | ✅ | ⚠️ | Partial | polling+pairing, no webhooks/sharding |
 | Browser relay endpoints | ✅ | ⚠️ | Partial (Stage 16 baseline) | `status/open/navigate/snapshot/click/type/screenshot` via `openclaw_cli` backend bridge |
@@ -30,9 +30,9 @@
 
 ## Next recommended step
 
-After Stage 16, the heaviest remaining parity items are:
+After Stage 17 slice 1, the heaviest remaining parity items are:
 
-1. Native OAuth device-code flow inside NexaClaw (remove dependency on external `openclaw` login/import bridge)
+1. Native OAuth device-code **start** acquisition endpoint flow (today: poll/store baseline from provided device-code payload)
 2. Native browser backend (Playwright/CDP in NexaClaw runtime) to reduce external CLI dependency
 3. Channels multi-provider expansion (Discord/Slack/Signal/etc) beyond Telegram baseline
 4. `agents` / `agent` command-family baseline (list/add/delete/targeted runs)

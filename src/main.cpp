@@ -540,9 +540,15 @@ int runModelsAuth(const std::string& configPath, const std::vector<std::string>&
     const auto profileId = argValue(pos, "--profile-id");
     const auto sourceProfileId = argValue(pos, "--source-profile-id");
     const auto importPathArg = argValue(pos, "--openclaw-auth-file");
-    const bool skipLogin = hasFlag(pos, "--skip-login") || importPathArg.has_value();
+    const auto deviceCodeJsonArg = argValue(pos, "--device-code-json");
+    const auto tokenUrlArg = argValue(pos, "--token-url");
+    const auto clientIdArg = argValue(pos, "--client-id");
+    const bool poll = hasFlag(pos, "--poll");
+    const bool forceBridge = hasFlag(pos, "--bridge-import");
+    const bool legacySkipLogin = hasFlag(pos, "--skip-login");
+
     if (!provider.has_value()) {
-      std::cerr << "Usage: models auth login --provider <name> [--profile-id <dest-id>] [--source-profile-id <id>] [--skip-login] [--openclaw-auth-file <path>]" << std::endl;
+      std::cerr << "Usage: models auth login --provider <name> [--profile-id <dest-id>] [native: --device-code-json <json|@file> [--poll] [--token-url <url>] [--client-id <id>]] [bridge: --bridge-import|--skip-login|--openclaw-auth-file <path> [--source-profile-id <id>]]" << std::endl;
       return 1;
     }
 
@@ -551,6 +557,211 @@ int runModelsAuth(const std::string& configPath, const std::vector<std::string>&
       return 1;
     }
 
+    const bool bridgeMode = forceBridge || legacySkipLogin || importPathArg.has_value() || sourceProfileId.has_value();
+
+    if (!bridgeMode) {
+      if (!deviceCodeJsonArg.has_value()) {
+        std::cout << json{{"ok", false},
+                          {"provider", *provider},
+                          {"native", true},
+                          {"error", "Native device-code flow requires --device-code-json (<json> or @file). Use --bridge-import for legacy OpenClaw import bridge."}}
+                         .dump(2)
+                  << std::endl;
+        return 1;
+      }
+
+      std::string deviceCodeRaw = *deviceCodeJsonArg;
+      if (!deviceCodeRaw.empty() && deviceCodeRaw[0] == '@') {
+        auto maybe = clawforge::util::FileUtil::readText(deviceCodeRaw.substr(1));
+        if (!maybe.has_value()) {
+          std::cout << json{{"ok", false},
+                            {"provider", *provider},
+                            {"native", true},
+                            {"error", "Cannot read device-code JSON file"},
+                            {"path", deviceCodeRaw.substr(1)}}
+                           .dump(2)
+                    << std::endl;
+          return 1;
+        }
+        deviceCodeRaw = *maybe;
+      }
+
+      auto deviceCode = json::parse(deviceCodeRaw, nullptr, false);
+      if (deviceCode.is_discarded() || !deviceCode.is_object()) {
+        std::cout << json{{"ok", false}, {"provider", *provider}, {"native", true}, {"error", "Invalid --device-code-json payload"}}
+                         .dump(2)
+                  << std::endl;
+        return 1;
+      }
+
+      const std::string deviceCodeValue = deviceCode.value("device_code", "");
+      const std::string userCode = deviceCode.value("user_code", "");
+      std::string verificationUri = deviceCode.value("verification_uri", "");
+      if (verificationUri.empty()) verificationUri = deviceCode.value("verification_url", "");
+      const std::string verificationUriComplete = deviceCode.value("verification_uri_complete", "");
+      const int interval = deviceCode.value("interval", 5);
+      const int expiresIn = deviceCode.value("expires_in", 900);
+
+      if (deviceCodeValue.empty()) {
+        std::cout << json{{"ok", false}, {"provider", *provider}, {"native", true}, {"error", "device_code is required in --device-code-json"}}
+                         .dump(2)
+                  << std::endl;
+        return 1;
+      }
+
+      if (!poll) {
+        std::cout << json{{"ok", true},
+                          {"provider", *provider},
+                          {"native", true},
+                          {"phase", "device_code_ready"},
+                          {"deviceCode", json{{"device_code", deviceCodeValue},
+                                               {"user_code", userCode},
+                                               {"verification_uri", verificationUri},
+                                               {"verification_uri_complete", verificationUriComplete},
+                                               {"interval", interval},
+                                               {"expires_in", expiresIn}}},
+                          {"next", "Run the same command with --poll after user authorizes the device code."}}
+                         .dump(2)
+                  << std::endl;
+        return 0;
+      }
+
+      const std::string tokenUrl = tokenUrlArg.value_or("https://api.openai.com/v1/oauth/token");
+      std::string clientId;
+      if (clientIdArg.has_value()) {
+        clientId = *clientIdArg;
+      } else if (const char* envClient = std::getenv("OPENAI_CODEX_CLIENT_ID"); envClient && std::string(envClient).size() > 0) {
+        clientId = envClient;
+      }
+      if (clientId.empty()) {
+        std::cout << json{{"ok", false},
+                          {"provider", *provider},
+                          {"native", true},
+                          {"poll", true},
+                          {"error", "client_id is required for --poll (pass --client-id or set OPENAI_CODEX_CLIENT_ID)"}}
+                         .dump(2)
+                  << std::endl;
+        return 1;
+      }
+
+      const std::string grantType = "urn:ietf:params:oauth:grant-type:device_code";
+      std::string cmd = "curl -sS --max-time 10 -w '\n__HTTP__%{http_code}' -X POST " + clawforge::util::Shell::quote(tokenUrl) +
+                        " -H " + clawforge::util::Shell::quote("Content-Type: application/x-www-form-urlencoded") +
+                        " --data-urlencode " + clawforge::util::Shell::quote("grant_type=" + grantType) +
+                        " --data-urlencode " + clawforge::util::Shell::quote("device_code=" + deviceCodeValue) +
+                        " --data-urlencode " + clawforge::util::Shell::quote("client_id=" + clientId);
+
+      const auto pollRes = clawforge::util::Shell::run(cmd);
+      if (pollRes.exitCode != 0) {
+        std::cout << json{{"ok", false},
+                          {"provider", *provider},
+                          {"native", true},
+                          {"poll", true},
+                          {"error", "OAuth token poll request failed"},
+                          {"details", pollRes.output}}
+                         .dump(2)
+                  << std::endl;
+        return 1;
+      }
+
+      const std::string marker = "\n__HTTP__";
+      const auto markerPos = pollRes.output.rfind(marker);
+      if (markerPos == std::string::npos) {
+        std::cout << json{{"ok", false},
+                          {"provider", *provider},
+                          {"native", true},
+                          {"poll", true},
+                          {"error", "Unexpected OAuth poll response format"}}
+                         .dump(2)
+                  << std::endl;
+        return 1;
+      }
+
+      const std::string body = pollRes.output.substr(0, markerPos);
+      const std::string httpCodeRaw = pollRes.output.substr(markerPos + marker.size());
+      int httpCode = 0;
+      try {
+        httpCode = std::stoi(httpCodeRaw);
+      } catch (...) {
+        httpCode = 0;
+      }
+
+      auto tokenResp = json::parse(body, nullptr, false);
+      if (tokenResp.is_discarded() || !tokenResp.is_object()) {
+        std::cout << json{{"ok", false},
+                          {"provider", *provider},
+                          {"native", true},
+                          {"poll", true},
+                          {"error", "OAuth poll response is not valid JSON"},
+                          {"httpStatus", httpCode},
+                          {"raw", body}}
+                         .dump(2)
+                  << std::endl;
+        return 1;
+      }
+
+      const std::string oauthError = tokenResp.value("error", "");
+      if (httpCode >= 400 || !oauthError.empty()) {
+        const bool retryable = (oauthError == "authorization_pending" || oauthError == "slow_down");
+        std::cout << json{{"ok", false},
+                          {"provider", *provider},
+                          {"native", true},
+                          {"poll", true},
+                          {"retryable", retryable},
+                          {"error", oauthError.empty() ? std::string("oauth_poll_failed") : oauthError},
+                          {"error_description", tokenResp.value("error_description", "")},
+                          {"httpStatus", httpCode},
+                          {"interval", interval}}
+                         .dump(2)
+                  << std::endl;
+        return retryable ? 2 : 1;
+      }
+
+      const std::string accessToken = tokenResp.value("access_token", "");
+      if (accessToken.empty()) {
+        std::cout << json{{"ok", false},
+                          {"provider", *provider},
+                          {"native", true},
+                          {"poll", true},
+                          {"error", "OAuth poll succeeded but access_token is missing"},
+                          {"httpStatus", httpCode}}
+                         .dump(2)
+                  << std::endl;
+        return 1;
+      }
+
+      clawforge::models::AuthProfile p;
+      p.id = profileId.value_or(std::string("openai-codex-default"));
+      p.provider = *provider;
+      p.mode = "oauth_token";
+      p.token = accessToken;
+      const int tokenExpiresIn = tokenResp.value("expires_in", 0);
+      if (tokenExpiresIn > 0) p.expiresAt = clawforge::models::AuthProfileStore::addSecondsUtcRfc3339(tokenExpiresIn);
+      p.meta = json{{"nativeDeviceCode", true},
+                    {"tokenUrl", tokenUrl},
+                    {"clientId", clientId},
+                    {"scope", tokenResp.value("scope", "")},
+                    {"tokenType", tokenResp.value("token_type", "")}};
+
+      if (!store.upsert(p)) {
+        std::cout << json{{"ok", false}, {"error", "Cannot store OAuth auth profile"}}.dump(2) << std::endl;
+        return 1;
+      }
+      (void)store.setActive(*provider, p.id);
+
+      std::cout << json{{"ok", true},
+                        {"provider", p.provider},
+                        {"profileId", p.id},
+                        {"mode", p.mode},
+                        {"expiresAt", p.expiresAt},
+                        {"native", true},
+                        {"polled", true}}
+                       .dump(2)
+                << std::endl;
+      return 0;
+    }
+
+    const bool skipLogin = legacySkipLogin || importPathArg.has_value();
     if (!skipLogin) {
       std::string cmd = "openclaw models auth login --provider " + clawforge::util::Shell::quote(*provider);
       if (profileId.has_value()) cmd += " --profile-id " + clawforge::util::Shell::quote(*profileId);
@@ -695,11 +906,13 @@ int runModelsAuth(const std::string& configPath, const std::vector<std::string>&
                       {"mode", p.mode},
                       {"expiresAt", p.expiresAt},
                       {"imported", true},
-                      {"path", openclawAuthPath.string()}}
+                      {"path", openclawAuthPath.string()},
+                      {"bridge", true}}
                      .dump(2)
               << std::endl;
     return 0;
   }
+
 
   if (pos.size() >= 3 && pos[2] == "use") {
     const auto provider = argValue(pos, "--provider");
