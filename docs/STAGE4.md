@@ -33,7 +33,7 @@
   "gateway": {
     "auth": {
       "mode": "token",
-      "tokenEnv": "CLAWFORGE_GATEWAY_TOKEN"
+      "tokenEnv": "NEXACLAW_GATEWAY_TOKEN"
     },
     "messageQueueTimeoutMs": 15000
   },
@@ -61,11 +61,11 @@ curl -s http://127.0.0.1:18890/health
 
 # auth-protected status
 curl -s http://127.0.0.1:18890/api/status \
-  -H "Authorization: Bearer $CLAWFORGE_GATEWAY_TOKEN"
+  -H "Authorization: Bearer $NEXACLAW_GATEWAY_TOKEN"
 
 # generic inbound webhook
 curl -s http://127.0.0.1:18890/api/inbound \
-  -H "Authorization: Bearer $CLAWFORGE_GATEWAY_TOKEN" \
+  -H "Authorization: Bearer $NEXACLAW_GATEWAY_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"channel":"webhook","peerId":"u42","text":"ping"}'
 ```

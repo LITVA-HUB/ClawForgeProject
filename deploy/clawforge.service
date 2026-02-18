@@ -9,7 +9,7 @@ ExecStart=%h/nexaclaw/build/nexaclaw run --config %h/nexaclaw/config/config.json
 Restart=on-failure
 RestartSec=2
 Environment=OPENAI_API_KEY=
-Environment=CLAWFORGE_GATEWAY_TOKEN=
+Environment=NEXACLAW_GATEWAY_TOKEN=
 
 [Install]
 WantedBy=multi-user.target

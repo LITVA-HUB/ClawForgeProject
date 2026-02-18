@@ -34,7 +34,7 @@
 ## Config
 ```bash
 ./build/nexaclaw config get gateway.auth.mode --config config/config.json
-./build/nexaclaw config set gateway.auth.tokenEnv CLAWFORGE_GATEWAY_TOKEN --config config/config.json
+./build/nexaclaw config set gateway.auth.tokenEnv NEXACLAW_GATEWAY_TOKEN --config config/config.json
 ./build/nexaclaw config get api.dmScope --config config/config.json
 ./build/nexaclaw config set telegram.dmPolicy pairing --config config/config.json
 ./build/nexaclaw config get models.routing.current --config config/config.json

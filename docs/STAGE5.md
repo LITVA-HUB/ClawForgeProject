@@ -48,7 +48,7 @@
 ```bash
 # SSE stream
 curl -N http://127.0.0.1:18890/api/events/stream \
-  -H "Authorization: Bearer $CLAWFORGE_GATEWAY_TOKEN"
+  -H "Authorization: Bearer $NEXACLAW_GATEWAY_TOKEN"
 
 # New CLI
 ./build/nexaclaw status

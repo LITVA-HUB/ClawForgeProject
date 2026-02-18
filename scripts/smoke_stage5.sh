@@ -4,7 +4,11 @@ set -eo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-BIN="${BIN:-./build/clawforge}"
+BIN="${BIN:-./build/nexaclaw}"
+if [[ ! -x "$BIN" && -x ./build/clawforge ]]; then
+  BIN="./build/clawforge"
+fi
+
 CONFIG_PATH="${CONFIG_PATH:-config/config.json}"
 BASE_URL="${BASE_URL:-http://127.0.0.1:18890}"
 
@@ -27,7 +31,7 @@ PY
 TOKEN_ENV="$(python3 - <<'PY' "$CONFIG_PATH"
 import json,sys
 cfg=json.load(open(sys.argv[1]))
-print(cfg.get('gateway',{}).get('auth',{}).get('tokenEnv','CLAWFORGE_GATEWAY_TOKEN'))
+print(cfg.get('gateway',{}).get('auth',{}).get('tokenEnv','NEXACLAW_GATEWAY_TOKEN'))
 PY
 )"
 
@@ -41,8 +45,8 @@ if [[ "$AUTH_MODE" == "token" ]]; then
   AUTH_HEADER=(-H "Authorization: Bearer $TOKEN")
 fi
 
-echo "[INFO] starting ClawForge..."
-"$BIN" run --config "$CONFIG_PATH" > /tmp/clawforge-stage5.log 2>&1 &
+echo "[INFO] starting NexaClaw..."
+"$BIN" run --config "$CONFIG_PATH" > /tmp/nexaclaw-stage5.log 2>&1 &
 PID=$!
 trap 'kill $PID >/dev/null 2>&1 || true' EXIT
 sleep 2
@@ -68,7 +72,7 @@ code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/status" "${AUTH_HEA
 echo "[OK] /api/status authorized"
 
 echo "[TEST] SSE /api/events/stream"
-SSE_OUT="/tmp/clawforge-stage5-sse.txt"
+SSE_OUT="/tmp/nexaclaw-stage5-sse.txt"
 rm -f "$SSE_OUT"
 curl -sN "$BASE_URL/api/events/stream" "${AUTH_HEADER[@]}" > "$SSE_OUT" &
 SSE_PID=$!

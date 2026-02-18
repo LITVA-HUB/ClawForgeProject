@@ -6,7 +6,12 @@ cd "$(dirname "$0")/.."
 cmake -S . -B build >/dev/null
 cmake --build build -j >/dev/null
 
-./build/clawforge run --config config/config.json > /tmp/clawforge-stage6.log 2>&1 &
+BIN="${BIN:-./build/nexaclaw}"
+if [[ ! -x "$BIN" && -x ./build/clawforge ]]; then
+  BIN="./build/clawforge"
+fi
+
+"$BIN" run --config config/config.json > /tmp/nexaclaw-stage6.log 2>&1 &
 PID=$!
 trap 'kill $PID >/dev/null 2>&1 || true' EXIT
 sleep 1

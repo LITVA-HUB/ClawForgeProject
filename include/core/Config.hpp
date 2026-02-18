@@ -57,7 +57,7 @@ struct ToolsPolicyConfig {
 
 struct GatewayAuthConfig {
   std::string mode{"off"};  // off | token
-  std::string tokenEnv{"CLAWFORGE_GATEWAY_TOKEN"};
+  std::string tokenEnv{"NEXACLAW_GATEWAY_TOKEN"};
 };
 
 struct GatewayConfig {

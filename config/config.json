@@ -19,7 +19,7 @@
   "gateway": {
     "auth": {
       "mode": "off",
-      "tokenEnv": "CLAWFORGE_GATEWAY_TOKEN"
+      "tokenEnv": "NEXACLAW_GATEWAY_TOKEN"
     },
     "messageQueueTimeoutMs": 15000
   },

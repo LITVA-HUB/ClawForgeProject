@@ -38,7 +38,7 @@ NexaClaw — это локальный control plane: сессии, tools, cron,
 ### Запуск
 
 ```bash
-cd ~/PycharmProjects/ClawForgeProject
+cd ~/PycharmProjects/NexaClawProject
 cp config/config.example.json config/config.json
 
 # Нужен для ответов через LLM
@@ -172,7 +172,7 @@ bash scripts/install.sh --validate
 Если `gateway.auth.mode = "token"`, добавляй заголовок:
 
 ```bash
--H "Authorization: Bearer $CLAWFORGE_GATEWAY_TOKEN"
+-H "Authorization: Bearer $NEXACLAW_GATEWAY_TOKEN"
 ```
 
 ### База

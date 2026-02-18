@@ -38,7 +38,7 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 ### Run
 
 ```bash
-cd ~/PycharmProjects/ClawForgeProject
+cd ~/PycharmProjects/NexaClawProject
 cp config/config.example.json config/config.json
 
 # Required for LLM responses
@@ -172,7 +172,7 @@ Language:
 If `gateway.auth.mode = "token"`, send:
 
 ```bash
--H "Authorization: Bearer $CLAWFORGE_GATEWAY_TOKEN"
+-H "Authorization: Bearer $NEXACLAW_GATEWAY_TOKEN"
 ```
 
 ### Core

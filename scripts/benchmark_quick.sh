@@ -3,7 +3,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-./build/clawforge run --config config/config.json > /tmp/clawforge-bench.log 2>&1 &
+BIN="${BIN:-./build/nexaclaw}"
+if [[ ! -x "$BIN" && -x ./build/clawforge ]]; then
+  BIN="./build/clawforge"
+fi
+
+"$BIN" run --config config/config.json > /tmp/nexaclaw-bench.log 2>&1 &
 PID=$!
 trap 'kill $PID >/dev/null 2>&1 || true' EXIT
 sleep 1

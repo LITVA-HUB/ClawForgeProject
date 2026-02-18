@@ -9,7 +9,12 @@ scripts/smoke_stage10_cli.sh >/dev/null
 scripts/smoke_stage11_models_auth.sh >/dev/null
 scripts/smoke_stage11_installer.sh >/dev/null
 
-./build/clawforge run --config config/config.json > /tmp/clawforge-full.log 2>&1 &
+BIN="${BIN:-./build/nexaclaw}"
+if [[ ! -x "$BIN" && -x ./build/clawforge ]]; then
+  BIN="./build/clawforge"
+fi
+
+"$BIN" run --config config/config.json > /tmp/nexaclaw-full.log 2>&1 &
 PID=$!
 trap 'kill $PID >/dev/null 2>&1 || true' EXIT
 sleep 1
