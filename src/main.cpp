@@ -500,7 +500,7 @@ int main(int argc, char** argv) {
       std::cerr << "Unknown image-fallbacks subcommand" << std::endl; return 1;
     }
 
-    std::set<std::string> compatTop = {"setup","onboard","configure","dashboard","reset","uninstall","update","message","agent","agents","acp","gateway","memory","nodes","devices","node","approvals","sandbox","dns","docs","hooks","webhooks","plugins","channels","security","skills","tui"};
+    std::set<std::string> compatTop = {"setup","onboard","configure","dashboard","reset","uninstall","update","message","agent","agents","acp","gateway","memory","nodes","devices","node","approvals","sandbox","dns","docs","hooks","webhooks","plugins","channels","security","skills","tui","voicecall","directory"};
     if (compatTop.count(command)) return (printCompatNotImplemented(command, lang), 2);
 
     if (command != "run") {

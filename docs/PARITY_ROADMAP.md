@@ -25,4 +25,10 @@
 
 ## Next recommended step
 
-Complete OAuth device-code flow and encrypted token-at-rest support; then continue branch-by-branch compatibility expansion (`gateway`, `browser`, `system`, `channels`) with parity e2e tests.
+Follow the Stage 12 critical path (see `docs/STAGE12_CRITICAL_GAPS.md`):
+
+1. Gateway service/RPC parity (`gateway status|start|stop|restart|call` + config apply/patch)
+2. Cron semantic parity (`status/edit/enable/disable/runs` + sessionTarget/delivery)
+3. Message command baseline (`message send` + strict target validation)
+4. Real OAuth device-code flow (`openai-codex` baseline)
+5. Browser backend upgrade (Playwright/CDP) for non-stub snapshot/actions
