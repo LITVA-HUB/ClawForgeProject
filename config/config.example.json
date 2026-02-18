@@ -40,7 +40,9 @@
     "routing": {
       "current": "openai/gpt-4o-mini",
       "aliases": {"default": "openai/gpt-4o-mini", "fast": "openai/gpt-4o-mini"},
-      "fallbacks": ["anthropic/claude-3-5-haiku-latest"]
+      "fallbacks": ["anthropic/claude-3-5-haiku-latest"],
+      "image": "openai/gpt-image-1",
+      "imageFallbacks": []
     }
   },
   "telegram": {
