@@ -16,7 +16,7 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 - HTTP API gateway: `/health`, `/api/status`, `/api/message`, `/api/inbound`, `/api/tools`, `/api/sessions`
 - Realtime SSE stream: `/api/events/stream`
 - Cron semantic baseline: `status/list/add/edit/enable/disable/run/runs/validate/rm` + sessionTarget/payload/delivery/wakeMode
-- Gateway control-plane baseline: `gateway status|start|stop|restart|health|call`
+- Gateway control-plane baseline: `gateway(run)|status|start|stop|restart|health|probe|call`
 - Session store + JSONL transcripts
 - Scoped tools policy (`global` / `channels` / `peers`)
 - Telegram baseline + pairing policy/approvals + message actions (`send/react/delete/poll`) baseline
@@ -254,6 +254,7 @@ scripts/smoke_stage18_native_browser.sh
 scripts/smoke_stage19_admin_dashboard.sh
 scripts/smoke_stage21_agents.sh
 scripts/smoke_stage22_nodes_canvas_devices.sh
+scripts/smoke_stage23_control_plane_slice1.sh
 
 # strict compile gates
 cmake -S . -B build_warnings -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror'

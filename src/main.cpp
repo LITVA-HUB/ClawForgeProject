@@ -220,7 +220,7 @@ bool ensureConfigFile(const std::string& configPath, std::string& error) {
 void printHelp(const std::string& lang) {
   const bool ru = (lang == "ru");
   std::cout << (ru ? "NexaClaw CLI (alias: clawforge)\n\n" : "NexaClaw CLI (alias: clawforge)\n\n");
-  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw setup|onboard|configure [--wizard|--non-interactive]\n  nexaclaw gateway status|start|stop|restart|call\n  nexaclaw security audit [--deep] [--fix]\n  nexaclaw cron status|list|add|edit|enable|disable|run|runs|validate|rm\n  nexaclaw browser status|open|navigate|snapshot|click|type|screenshot\n  nexaclaw nodes|node list|status|describe|invoke\n  nexaclaw devices list|status|invoke\n  nexaclaw canvas status|list|snapshot|invoke\n  nexaclaw message send|react|delete|poll --channel telegram ...\n  nexaclaw channels list|status|capabilities|resolve|add|remove\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|login|paste-token|setup-token|use|remove\n  nexaclaw models auth order get|set|clear --provider <name>\n";
+  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw setup|onboard|configure [--wizard|--non-interactive]\n  nexaclaw gateway run|status|start|stop|restart|probe|call\n  nexaclaw security audit [--deep] [--fix]\n  nexaclaw cron status|list|get|add|edit|enable|disable|run|runs|validate|rm\n  nexaclaw browser status|open|navigate|snapshot|click|type|screenshot\n  nexaclaw nodes|node list|status|describe|invoke\n  nexaclaw devices list|status|invoke\n  nexaclaw canvas status|list|snapshot|invoke\n  nexaclaw message send|react|delete|poll --channel telegram ...\n  nexaclaw channels list|status|capabilities|resolve|add|remove\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|login|paste-token|setup-token|use|remove\n  nexaclaw models auth order get|set|clear --provider <name>\n";
   std::cout << (ru ? "\nСовместимость OpenClaw: неизвестные top-level ветки отдаются как compatibility stub вместо unknown (см. docs/CLI_PARITY.md).\n"
                    : "\nOpenClaw compatibility: unknown top-level branches return compatibility stubs instead of hard unknown (see docs/CLI_PARITY.md).\n");
 }
@@ -568,6 +568,23 @@ int runCronList(const std::string& configPath) {
   for (const auto& job : cron.listJobs()) arr.push_back(cronJobToJson(job));
   std::cout << json({{"ok", true}, {"mode", "local"}, {"jobs", arr}}).dump(2) << std::endl;
   return 0;
+}
+
+int runCronGet(const std::string& configPath, const std::string& id) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  const auto remote = httpGetJson("http://" + cfg.http.host + ":" + std::to_string(cfg.http.port) + "/api/cron/jobs/" + id,
+                                  authHeaderFromEnv(cfg));
+  if (remote.has_value() && remote->value("ok", false)) {
+    std::cout << remote->dump(2) << std::endl;
+    return 0;
+  }
+
+  clawforge::core::EventBus bus;
+  clawforge::automation::CronScheduler cron(cfg.stateDir, cfg.cron.tickMs, [](const auto&) {}, bus);
+  if (!cron.init()) return 1;
+  const auto out = cron.getJob(id);
+  std::cout << out.dump(2) << std::endl;
+  return out.value("ok", false) ? 0 : 1;
 }
 int runToolsList(const std::string& configPath) { const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath); const auto remote = httpGetJson("http://" + cfg.http.host + ":" + std::to_string(cfg.http.port) + "/api/tools", authHeaderFromEnv(cfg)); if (remote.has_value() && remote->value("ok", false)) { std::cout << remote->dump(2) << std::endl; return 0; } clawforge::tools::ToolRegistry tools; clawforge::tools::registerBuiltinTools(tools, cfg.workspace); tools.setPolicy(cfg.toolsPolicy); std::cout << json({{"ok", true}, {"mode", "local"}, {"tools", tools.list()}, {"allowedTools", tools.allowedTools()}}).dump(2) << std::endl; return 0; }
 
@@ -1623,6 +1640,7 @@ int runCronAction(const std::string& configPath, const std::string& action,
   const auto auth = authHeaderFromEnv(cfg);
 
   if (action == "list") return runCronList(configPath);
+  if (action == "get" || action == "show") return runCronGet(configPath, arg);
 
   if (action == "status") {
     const auto remote = httpGetJson(base + "/api/cron/status", auth);
@@ -2238,6 +2256,35 @@ int runGatewayStatus(const std::string& configPath) {
   return 0;
 }
 
+int runGatewayProbe(const std::string& configPath, const std::vector<std::string>& pos) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  const bool includeLocal = !hasFlag(pos, "--no-local");
+  const std::string explicitUrl = argValue(pos, "--url").value_or("");
+
+  json probes = json::array();
+  if (includeLocal) {
+    probes.push_back(json{{"target", "local"}, {"url", "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port)}});
+  }
+  if (!explicitUrl.empty()) {
+    probes.push_back(json{{"target", "explicit"}, {"url", explicitUrl}});
+  }
+
+  json results = json::array();
+  for (const auto& p : probes) {
+    const std::string url = p.value("url", "");
+    const auto health = httpGetJson(url + "/health", authHeaderFromEnv(cfg));
+    const auto status = httpGetJson(url + "/api/status", authHeaderFromEnv(cfg));
+    results.push_back(json{{"target", p.value("target", "unknown")},
+                           {"url", url},
+                           {"reachable", health.has_value() && health->value("ok", false)},
+                           {"health", health.has_value() ? *health : json::object()},
+                           {"status", status.has_value() ? *status : json::object()}});
+  }
+
+  std::cout << json{{"ok", true}, {"probes", results}}.dump(2) << std::endl;
+  return 0;
+}
+
 int runGatewayStart(const std::string& configPath, const std::string& programPath) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
   auto before = gatewayStatusPayload(cfg);
@@ -2410,6 +2457,25 @@ int runGatewayCall(const std::string& configPath, const std::vector<std::string>
     return 2;
   }
 
+  if (method == "logs.tail") {
+    const int lines = std::max(1, params.value("lines", params.value("limit", 50)));
+    const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+    const std::filesystem::path p = cfg.audit.file;
+    if (!std::filesystem::exists(p)) {
+      std::cout << json{{"ok", false}, {"method", method}, {"error", "audit log file not found"}, {"path", p.string()}}.dump(2) << std::endl;
+      return 1;
+    }
+    std::ifstream in(p);
+    std::vector<std::string> all;
+    std::string line;
+    while (std::getline(in, line)) all.push_back(line);
+    const size_t start = all.size() > static_cast<size_t>(lines) ? all.size() - static_cast<size_t>(lines) : 0;
+    json tail = json::array();
+    for (size_t i = start; i < all.size(); ++i) tail.push_back(all[i]);
+    std::cout << json{{"ok", true}, {"method", method}, {"path", p.string()}, {"lines", tail}}.dump(2) << std::endl;
+    return 0;
+  }
+
   if (method == "update.run") {
     std::cout << json{{"ok", false}, {"error", "update.run is not implemented yet in NexaClaw baseline"}}.dump(2) << std::endl;
     return 2;
@@ -2450,8 +2516,14 @@ int runSecurityAudit(const std::string& configPath, const std::vector<std::strin
   }
 
   if (cfg.gateway.auth.mode == "token") {
-    if (hasEnvToken(cfg.gateway.auth.tokenEnv)) report("gateway.auth.token", "OK", cfg.gateway.auth.tokenEnv);
-    else { ++fails; report("gateway.auth.token", "FAIL", "missing env: " + cfg.gateway.auth.tokenEnv); }
+    if (hasEnvToken(cfg.gateway.auth.tokenEnv)) {
+      report("gateway.auth.token", "OK", cfg.gateway.auth.tokenEnv);
+      const char* token = std::getenv(cfg.gateway.auth.tokenEnv.c_str());
+      if (token && std::string(token).size() < 16) {
+        ++warnings;
+        report("gateway.auth.token_strength", "WARN", ru ? "токен короче 16 символов" : "token is shorter than 16 chars");
+      }
+    } else { ++fails; report("gateway.auth.token", "FAIL", "missing env: " + cfg.gateway.auth.tokenEnv); }
   } else {
     if (!isLoopbackHost(cfg.http.host)) {
       ++warnings;
@@ -2475,6 +2547,14 @@ int runSecurityAudit(const std::string& configPath, const std::vector<std::strin
     else report(ru ? "Права stateDir" : "State dir permissions", "WARN", ru ? "слишком широкие" : "too open");
   } else {
     report(ru ? "Права stateDir" : "State dir permissions", "OK", cfg.stateDir.string());
+  }
+
+  if (permsTooOpen(cfg.audit.file)) {
+    ++warnings;
+    if (fix) { tightenPermsOwnerOnly(cfg.audit.file); ++fixed; report(ru ? "Права audit log" : "Audit log permissions", "FIX", cfg.audit.file); }
+    else report(ru ? "Права audit log" : "Audit log permissions", "WARN", ru ? "слишком широкие" : "too open");
+  } else {
+    report(ru ? "Права audit log" : "Audit log permissions", "OK", cfg.audit.file);
   }
 
   if (deep) {
@@ -2637,18 +2717,22 @@ int main(int argc, char** argv) {
     }
 
     if (command == "gateway") {
-      if (pos.size() >= 2 && pos[1] == "status") return runGatewayStatus(configPath);
-      if (pos.size() >= 2 && pos[1] == "start") return runGatewayStart(configPath, programPath);
-      if (pos.size() >= 2 && pos[1] == "stop") return runGatewayStop(configPath);
-      if (pos.size() >= 2 && pos[1] == "restart") return runGatewayRestart(configPath, programPath);
-      if (pos.size() >= 2 && pos[1] == "health") return runHealth(configPath);
-      if (pos.size() >= 2 && pos[1] == "call") return runGatewayCall(configPath, pos);
-      return (printCompatNotImplemented("gateway " + (pos.size() >= 2 ? pos[1] : ""), lang), 2);
+      if (pos.size() == 1 || (pos.size() >= 2 && (pos[1] == "run"))) command = "run";
+      else if (pos.size() >= 2 && pos[1] == "status") return runGatewayStatus(configPath);
+      else if (pos.size() >= 2 && pos[1] == "start") return runGatewayStart(configPath, programPath);
+      else if (pos.size() >= 2 && pos[1] == "stop") return runGatewayStop(configPath);
+      else if (pos.size() >= 2 && pos[1] == "restart") return runGatewayRestart(configPath, programPath);
+      else if (pos.size() >= 2 && pos[1] == "health") return runHealth(configPath);
+      else if (pos.size() >= 2 && pos[1] == "probe") return runGatewayProbe(configPath, pos);
+      else if (pos.size() >= 2 && (pos[1] == "discover" || pos[1] == "install" || pos[1] == "uninstall")) {
+        return printNotImplJson("gateway", pos[1], {"run", "status", "start", "stop", "restart", "health", "probe", "call"});
+      } else if (pos.size() >= 2 && pos[1] == "call") return runGatewayCall(configPath, pos);
+      else return printNotImplJson("gateway", (pos.size() >= 2 ? pos[1] : ""), {"run", "status", "start", "stop", "restart", "health", "probe", "call"});
     }
 
     if (command == "security") {
       if (pos.size() == 1 || (pos.size() >= 2 && pos[1] == "audit")) return runSecurityAudit(configPath, pos, lang);
-      return (printCompatNotImplemented("security " + (pos.size() >= 2 ? pos[1] : ""), lang), 2);
+      return printNotImplJson("security", (pos.size() >= 2 ? pos[1] : ""), {"audit"});
     }
 
     if (command == "browser" && pos.size() >= 2 && pos[1] == "status") return runBrowserStatus(configPath);
@@ -2660,6 +2744,7 @@ int main(int argc, char** argv) {
     if (command == "browser" && pos.size() >= 2 && pos[1] == "screenshot") return runBrowserScreenshot(configPath, pos);
     if (command == "cron" && pos.size() >= 2 && pos[1] == "status") return runCronAction(configPath, "status");
     if (command == "cron" && pos.size() >= 2 && pos[1] == "list") return runCronAction(configPath, "list");
+    if (command == "cron" && pos.size() >= 3 && (pos[1] == "get" || pos[1] == "show")) return runCronAction(configPath, "get", pos[2]);
     if (command == "cron" && pos.size() >= 2 && pos[1] == "add") {
       auto j = parseJsonArg(pos);
       if (!j.has_value()) { std::cerr << "Missing --json payload" << std::endl; return 1; }
@@ -2685,6 +2770,9 @@ int main(int argc, char** argv) {
     if (command == "cron" && pos.size() >= 3 && pos[1] == "run") {
       const std::string mode = hasFlag(pos, "--due") ? "due" : "force";
       return runCronAction(configPath, "run", pos[2], mode);
+    }
+    if (command == "cron") {
+      return printNotImplJson("cron", (pos.size() >= 2 ? pos[1] : ""), {"status", "list", "get", "add", "edit", "enable", "disable", "run", "runs", "validate", "rm"});
     }
 
     if (command == "nodes" || command == "node") {

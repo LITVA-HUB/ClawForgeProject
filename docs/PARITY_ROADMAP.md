@@ -1,6 +1,6 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 22 slice 1 (nodes/canvas/devices baseline seed).
+> Updated after Stage 23 slice 1 (control-plane cron/gateway/security uplift).
 
 ## Practical parity matrix
 
@@ -9,11 +9,11 @@
 | HTTP API `/health`, `/api/message`, `/api/status` | ✅ | ✅ | Closed | Stable local gateway |
 | Session store | ✅ | ✅ | Closed | File-backed sessions |
 | Tools registry + scoped policy | ✅ | ✅ | Closed | global/channel/peer policy |
-| Cron jobs (`every`, `at`, `cron`) | ✅ | ⚠️ | Partial (Stage 14 baseline) | `status/edit/enable/disable/runs`, sessionTarget/payload contracts, run history + retry backoff |
+| Cron jobs (`every`, `at`, `cron`) | ✅ | ⚠️ | Partial (Stage 23 slice 1) | Stage14 semantics + Stage23 `cron get/show`, structured not_implemented for unsupported subcommands |
 | CLI UX + doctor | ✅ | ✅ | Closed | RU/EN + compatibility dispatcher |
 | Setup/onboard/configure wizard | ✅ | ⚠️ | Partial (Stage 13 baseline) | bilingual terminal setup wizard + non-interactive mode |
-| Gateway control-plane (`gateway status/start/stop/restart/call`) | ✅ | ⚠️ | Partial (Stage 12 baseline) | local pid/log process management + config.get/apply/patch baseline |
-| Security audit (`security audit [--deep] [--fix]`) | ✅ | ⚠️ | Partial (Stage 12 baseline) | dmScope/auth/perms checks + safe fixes |
+| Gateway control-plane (`gateway status/start/stop/restart/call`) | ✅ | ⚠️ | Partial (Stage 23 slice 1) | Stage12 baseline + `gateway`/`gateway run` alias, `gateway probe`, `gateway call logs.tail`, structured stubs for discover/install/uninstall |
+| Security audit (`security audit [--deep] [--fix]`) | ✅ | ⚠️ | Partial (Stage 23 slice 1) | dmScope/auth/perms checks + token-strength + audit-log perms + safe fixes |
 | Message command/action surface | ✅ | ⚠️ | Partial (Stage 16 baseline) | telegram `send/react/delete/poll` + strict target validation + dry-run |
 | Channels command family | ✅ | ⚠️ | Partial (Stage 15 baseline) | `channels list/status/capabilities/resolve/add/remove` (telegram baseline) |
 | Agent/agents command family | ✅ | ⚠️ | Partial (Stage 21 baseline) | `list/show/create/delete/use/run` + structured stubs for unsupported subpaths; run path uses tasks/message/session fallback |

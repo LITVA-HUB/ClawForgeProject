@@ -16,7 +16,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `health` | `health` | implemented | `nexaclaw health` |
 | `doctor` | `doctor` | implemented | `nexaclaw doctor` / `--doctor` |
 | `sessions` | list/show/ops | partial | `nexaclaw sessions` list baseline |
-| `cron` | status/list/add/edit/enable/disable/run/runs/validate/rm | partial | Stage 14 semantic baseline (sessionTarget/payload/delivery/wakeMode + run history), still not full OpenClaw delivery ecosystem |
+| `cron` | status/list/add/edit/enable/disable/run/runs/validate/rm (+get/show baseline) | partial | Stage 23 slice 1 adds `get/show` + structured not_implemented for unsupported subcommands; still not full OpenClaw delivery ecosystem |
 | `tools` | list/call | implemented | `tools list`, `tools call <name> --json <payload>` |
 | `browser` | status/open/snapshot/... | partial | Stage 18 baseline: `status|open|navigate|snapshot|click|type|screenshot` via native backend (`browser.backend=native`) with `openclaw_cli` fallback/compat |
 | `config` | get/set | partial | expanded key coverage, not full OpenClaw config surface |
@@ -25,7 +25,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `logs` | tail/... | partial | `logs tail [lines]` (audit file tail) |
 | `system` | event/... | partial | `system event <text>` baseline enqueue path |
 | `pairing` | list/approve/... | partial | `list`, `approve` |
-| `gateway` | status/start/stop/restart/call | partial | `status|start|stop|restart|health|call` baseline (local pid/log + RPC-like `gateway call`) |
+| `gateway` | status/start/stop/restart/call/probe/discover/... | partial | Stage 23 slice 1: `gateway`/`gateway run` alias to foreground run, added `probe`, `gateway call logs.tail`, and structured not_implemented for discover/install/uninstall |
 | `message` | send/... | partial | Stage 16 baseline: telegram `send|react|delete|poll` with strict target validation + dry-run |
 | `agent` | manage/ops | partial | Stage 21 baseline alias to `agents` family (`list/show/create/delete/use/run`) + structured stubs for unavailable subpaths |
 | `agents` | manage/ops | partial | Stage 21 baseline (`list/show/create/delete/use/run`) with file-backed registry + task/message/session fallback orchestration |
@@ -70,9 +70,10 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - stage20 slice1 uplift: runtime-aware native loading for `data:` + `http(s)` content (via local `curl` capability), additive `runtime` metadata on open/navigate/snapshot/click, and structured native warning codes when runtime fetch is unavailable/fails
 - limitation: native backend is still not full CDP/Playwright control (no full JS runtime/CDP sessions); use `browser.backend=openclaw_cli` when real OpenClaw browser automation is required
 
-### Cron (Stage 14 semantic baseline)
+### Cron (Stage 23 control-plane uplift on top of Stage 14 baseline)
 - `cron status` — **implemented**
 - `cron list` — **implemented**
+- `cron get <id>` / `cron show <id>` — **implemented baseline**
 - `cron add --json '<payload>'` — **implemented**
 - `cron edit <id> --json '<patch>'` — **implemented**
 - `cron enable <id>` / `cron disable <id>` — **implemented**
@@ -143,15 +144,19 @@ Orchestration path for `run`:
 - `logs tail [lines]` — **implemented** (audit file tail)
 - `system event <text>` — **implemented** (API path when available, local fallback to main session system message)
 
-### Gateway (Stage 12 baseline)
+### Gateway (Stage 23 control-plane uplift on top of Stage 12 baseline)
+- `gateway` / `gateway run` — **implemented baseline alias** to foreground `run`
 - `gateway status|start|stop|restart|health` — **partial** (single-host local process baseline with pid/log files)
-- `gateway call config.get|config.apply|config.patch` — **partial** (local RPC-like flow + config hash guard + validation)
+- `gateway probe [--url <http-base>] [--no-local]` — **implemented baseline** (HTTP probe for `/health` + `/api/status`)
+- `gateway call config.get|config.apply|config.patch|logs.tail` — **partial** (local RPC-like flow + config hash guard + validation + audit tail)
+- unsupported `gateway discover|install|uninstall` — explicit structured JSON `not_implemented`
 - `gateway call update.run` — explicit `not implemented yet`
 
-### Security (Stage 12 baseline)
+### Security (Stage 23 control-plane uplift on top of Stage 12 baseline)
 - `security audit` — **partial**
-- checks: DM scope risk, gateway auth env presence, config/state permissions
+- checks: DM scope risk, gateway auth env presence, gateway token weak-length warning, config/state/audit-log permissions
 - `security audit --fix` applies safe baseline remediations (dmScope + perms)
+- unsupported security subcommands return structured JSON `not_implemented`
 
 ### Setup/Onboard/Configure (Stage 13 wizard baseline)
 - `setup` / `onboard` / `configure` — **partial**
