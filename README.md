@@ -252,6 +252,8 @@ scripts/smoke_stage15_message_channels.sh
 scripts/smoke_stage16_browser_oauth_message.sh
 scripts/smoke_stage18_native_browser.sh
 scripts/smoke_stage19_admin_dashboard.sh
+scripts/smoke_stage21_agents.sh
+scripts/smoke_stage22_nodes_canvas_devices.sh
 
 # strict compile gates
 cmake -S . -B build_warnings -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror'
@@ -293,7 +295,7 @@ Key blocks:
 - Browser parity now has a native NexaClaw baseline backend (`browser.backend=native`) for core command/API flow; `browser.backend=openclaw_cli` remains available for real browser relay compatibility
 - `agent/agents` CLI is baseline-only (list/show/create/delete/use/run + deterministic task/message/session fallback), not full OpenClaw orchestration parity
 - Telegram is baseline, not full multi-channel ecosystem
-- No Canvas/Nodes integration yet
+- Canvas/Nodes/Devices are Stage 22 slice 1 baseline only (safe local registry + structured stubs; no full runtime control yet)
 - No full external subagent runtime orchestration
 
 For up-to-date details, check [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md).

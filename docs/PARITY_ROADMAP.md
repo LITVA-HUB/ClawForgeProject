@@ -1,6 +1,6 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 21 (agent/agents baseline + practical orchestration uplift on existing task/session stack).
+> Updated after Stage 22 slice 1 (nodes/canvas/devices baseline seed).
 
 ## Practical parity matrix
 
@@ -26,7 +26,7 @@
 | Realtime events | ✅ | ✅ | Closed | SSE + EventBus |
 | Async task/job lane | ✅ | ⚠️ | Partial | internal queue, single worker |
 | Rate limiting + audit trail + recovery | ✅ | ✅ | Closed (baseline) | source RL, JSONL audit, task restore |
-| Canvas/Nodes/device control | ✅ | ❌ | Open | not implemented |
+| Canvas/Nodes/device control | ✅ | ⚠️ | Partial (Stage 22 slice 1 baseline) | CLI/API seed for `nodes|node|devices|canvas` with local safe registry + structured stubs where runtime unavailable |
 | Multi-channel plugins (Discord/Slack/Signal/etc) | ✅ | ❌ | Open | Telegram-first baseline |
 | Advanced subagent orchestration | ✅ | ❌ | Open | no external runtime orchestration |
 
@@ -37,4 +37,4 @@ After Stage 20 slice 1, the heaviest remaining parity items are:
 1. Upgrade native browser backend from runtime-assisted baseline to true Playwright/CDP-attached control
 2. Channels multi-provider expansion (Discord/Slack/Signal/etc) beyond Telegram baseline
 3. Deepen `agent/agents` from baseline into richer orchestration semantics (subagents, approvals, richer targeting)
-4. Multi-channel/plugin + nodes/canvas ecosystem parity
+4. Multi-channel/plugin expansion beyond Telegram baseline

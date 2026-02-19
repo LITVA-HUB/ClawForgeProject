@@ -220,7 +220,7 @@ bool ensureConfigFile(const std::string& configPath, std::string& error) {
 void printHelp(const std::string& lang) {
   const bool ru = (lang == "ru");
   std::cout << (ru ? "NexaClaw CLI (alias: clawforge)\n\n" : "NexaClaw CLI (alias: clawforge)\n\n");
-  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw setup|onboard|configure [--wizard|--non-interactive]\n  nexaclaw gateway status|start|stop|restart|call\n  nexaclaw security audit [--deep] [--fix]\n  nexaclaw cron status|list|add|edit|enable|disable|run|runs|validate|rm\n  nexaclaw browser status|open|navigate|snapshot|click|type|screenshot\n  nexaclaw message send|react|delete|poll --channel telegram ...\n  nexaclaw channels list|status|capabilities|resolve|add|remove\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|login|paste-token|setup-token|use|remove\n  nexaclaw models auth order get|set|clear --provider <name>\n";
+  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw setup|onboard|configure [--wizard|--non-interactive]\n  nexaclaw gateway status|start|stop|restart|call\n  nexaclaw security audit [--deep] [--fix]\n  nexaclaw cron status|list|add|edit|enable|disable|run|runs|validate|rm\n  nexaclaw browser status|open|navigate|snapshot|click|type|screenshot\n  nexaclaw nodes|node list|status|describe|invoke\n  nexaclaw devices list|status|invoke\n  nexaclaw canvas status|list|snapshot|invoke\n  nexaclaw message send|react|delete|poll --channel telegram ...\n  nexaclaw channels list|status|capabilities|resolve|add|remove\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|login|paste-token|setup-token|use|remove\n  nexaclaw models auth order get|set|clear --provider <name>\n";
   std::cout << (ru ? "\nСовместимость OpenClaw: неизвестные top-level ветки отдаются как compatibility stub вместо unknown (см. docs/CLI_PARITY.md).\n"
                    : "\nOpenClaw compatibility: unknown top-level branches return compatibility stubs instead of hard unknown (see docs/CLI_PARITY.md).\n");
 }
@@ -1321,6 +1321,170 @@ std::optional<std::string> parseJsonArg(const std::vector<std::string>& pos) {
   return std::nullopt;
 }
 
+json defaultNodesRegistry() {
+  return json{{"nodes", json::array({json{{"id", "local-node"},
+                                           {"name", "Local Baseline Node"},
+                                           {"platform", "darwin"},
+                                           {"connected", true},
+                                           {"capabilities", json::array({"status", "describe", "invoke:read-safe", "canvas:status"})}}})}};
+}
+
+json loadNodesRegistry(const clawforge::core::AppConfig& cfg) {
+  const auto path = cfg.stateDir / "nodes" / "registry.json";
+  if (std::filesystem::exists(path)) {
+    auto raw = clawforge::util::FileUtil::readText(path.string()).value_or("{}");
+    auto parsed = json::parse(raw, nullptr, false);
+    if (!parsed.is_discarded() && parsed.is_object() && parsed.contains("nodes") && parsed["nodes"].is_array()) return parsed;
+  }
+  return defaultNodesRegistry();
+}
+
+json nodesMethod(const clawforge::core::AppConfig& cfg, const std::string& method, const json& params) {
+  const auto reg = loadNodesRegistry(cfg);
+  const auto nodes = reg.value("nodes", json::array());
+
+  if (method == "nodes.list") {
+    return json{{"ok", true}, {"method", method}, {"nodes", nodes}, {"count", nodes.size()}, {"baseline", true}};
+  }
+
+  if (method == "nodes.status") {
+    size_t connected = 0;
+    for (const auto& n : nodes) if (n.value("connected", false)) ++connected;
+    return json{{"ok", true},
+                {"method", method},
+                {"status", json{{"total", nodes.size()}, {"connected", connected}, {"disconnected", nodes.size() - connected}}},
+                {"baseline", true}};
+  }
+
+  if (method == "nodes.describe") {
+    const std::string id = params.value("node", params.value("id", std::string("local-node")));
+    for (const auto& n : nodes) {
+      if (n.value("id", "") == id) return json{{"ok", true}, {"method", method}, {"node", n}, {"baseline", true}};
+    }
+    return json{{"ok", false}, {"method", method}, {"error", "node_not_found"}, {"node", id}};
+  }
+
+  if (method == "nodes.invoke") {
+    const std::string id = params.value("node", params.value("id", std::string("local-node")));
+    const std::string action = params.value("action", std::string("status"));
+    if (action == "status" || action == "list" || action == "describe") {
+      return json{{"ok", true},
+                  {"method", method},
+                  {"node", id},
+                  {"action", action},
+                  {"invoke", json{{"readSafe", true}, {"executed", false}, {"result", "baseline-noop"}}},
+                  {"baseline", true}};
+    }
+    return json{{"ok", false},
+                {"method", method},
+                {"node", id},
+                {"action", action},
+                {"error", "invoke_not_available_in_baseline"},
+                {"readSafeOnly", true}};
+  }
+
+  return json{{"ok", false}, {"method", method}, {"error", "unsupported_nodes_method"}};
+}
+
+int runNodesFamily(const std::string& configPath, const std::vector<std::string>& pos, const std::string& command) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  const std::string sub = pos.size() >= 2 ? pos[1] : "list";
+
+  if (sub == "list") {
+    std::cout << nodesMethod(cfg, "nodes.list", json::object()).dump(2) << std::endl;
+    return 0;
+  }
+  if (sub == "status") {
+    std::cout << nodesMethod(cfg, "nodes.status", json::object()).dump(2) << std::endl;
+    return 0;
+  }
+  if (sub == "describe") {
+    const std::string id = argValue(pos, "--node").value_or(pos.size() >= 3 ? pos[2] : "local-node");
+    const auto out = nodesMethod(cfg, "nodes.describe", json{{"node", id}});
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 1;
+  }
+  if (sub == "invoke") {
+    const std::string id = argValue(pos, "--node").value_or("local-node");
+    const std::string action = argValue(pos, "--action").value_or(pos.size() >= 3 ? pos[2] : "status");
+    const auto out = nodesMethod(cfg, "nodes.invoke", json{{"node", id}, {"action", action}});
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 2;
+  }
+
+  std::cout << json{{"ok", false},
+                    {"command", command},
+                    {"error", "not_implemented"},
+                    {"supported", json::array({"list", "status", "describe", "invoke"})}}
+                   .dump(2)
+            << std::endl;
+  return 2;
+}
+
+int runDevicesFamily(const std::string& configPath, const std::vector<std::string>& pos) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  const std::string sub = pos.size() >= 2 ? pos[1] : "list";
+  const auto reg = loadNodesRegistry(cfg);
+  json devices = json::array();
+  for (const auto& n : reg.value("nodes", json::array())) {
+    devices.push_back(json{{"id", n.value("id", "")}, {"name", n.value("name", "")}, {"online", n.value("connected", false)}, {"type", "paired-node"}});
+  }
+
+  if (sub == "list") {
+    std::cout << json{{"ok", true}, {"devices", devices}, {"count", devices.size()}, {"baseline", true}}.dump(2) << std::endl;
+    return 0;
+  }
+  if (sub == "status") {
+    size_t online = 0;
+    for (const auto& d : devices) if (d.value("online", false)) ++online;
+    std::cout << json{{"ok", true}, {"status", json{{"total", devices.size()}, {"online", online}}}, {"baseline", true}}.dump(2) << std::endl;
+    return 0;
+  }
+  if (sub == "invoke") {
+    const std::string id = argValue(pos, "--device").value_or("local-node");
+    const std::string action = argValue(pos, "--action").value_or("status");
+    const bool allowed = (action == "status" || action == "list");
+    const auto out = json{{"ok", allowed},
+                          {"device", id},
+                          {"action", action},
+                          {"baseline", true},
+                          {"readSafeOnly", true},
+                          {"error", allowed ? "" : "invoke_not_available_in_baseline"}};
+    std::cout << out.dump(2) << std::endl;
+    return allowed ? 0 : 2;
+  }
+
+  std::cout << json{{"ok", false}, {"error", "not_implemented"}, {"supported", json::array({"list", "status", "invoke"})}}.dump(2) << std::endl;
+  return 2;
+}
+
+int runCanvasFamily(const std::string& configPath, const std::vector<std::string>& pos) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  (void)cfg;
+  const std::string sub = pos.size() >= 2 ? pos[1] : "status";
+  if (sub == "status" || sub == "list") {
+    std::cout << json{{"ok", true},
+                      {"canvas", json{{"available", false}, {"mode", "baseline-stub"}, {"reason", "runtime_not_configured"}}},
+                      {"readSafe", true}}
+                     .dump(2)
+              << std::endl;
+    return 0;
+  }
+  if (sub == "snapshot" || sub == "invoke") {
+    std::cout << json{{"ok", false},
+                      {"error", "canvas_runtime_unavailable"},
+                      {"subcommand", sub},
+                      {"readSafeOnly", true},
+                      {"hint", "Use canvas status/list in baseline mode"}}
+                     .dump(2)
+              << std::endl;
+    return 2;
+  }
+  std::cout << json{{"ok", false}, {"error", "not_implemented"}, {"supported", json::array({"status", "list", "snapshot", "invoke"})}}.dump(2)
+            << std::endl;
+  return 2;
+}
+
 int runBrowserStatus(const std::string& configPath) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
   const std::string baseUrl = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
@@ -2220,6 +2384,32 @@ int runGatewayCall(const std::string& configPath, const std::vector<std::string>
     return 0;
   }
 
+  if (method == "nodes.list" || method == "nodes.status" || method == "nodes.describe" || method == "nodes.invoke") {
+    const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+    const auto out = nodesMethod(cfg, method, params);
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : (out.value("error", "") == "invoke_not_available_in_baseline" ? 2 : 1);
+  }
+
+  if (method == "devices.list") {
+    const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+    const auto reg = loadNodesRegistry(cfg);
+    json devices = json::array();
+    for (const auto& n : reg.value("nodes", json::array())) devices.push_back(json{{"id", n.value("id", "")}, {"name", n.value("name", "")}, {"online", n.value("connected", false)}});
+    std::cout << json{{"ok", true}, {"method", method}, {"devices", devices}, {"baseline", true}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (method == "canvas.status") {
+    std::cout << json{{"ok", true}, {"method", method}, {"canvas", json{{"available", false}, {"mode", "baseline-stub"}}}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (method == "canvas.invoke") {
+    std::cout << json{{"ok", false}, {"method", method}, {"error", "canvas_runtime_unavailable"}, {"readSafeOnly", true}}.dump(2) << std::endl;
+    return 2;
+  }
+
   if (method == "update.run") {
     std::cout << json{{"ok", false}, {"error", "update.run is not implemented yet in NexaClaw baseline"}}.dump(2) << std::endl;
     return 2;
@@ -2497,6 +2687,18 @@ int main(int argc, char** argv) {
       return runCronAction(configPath, "run", pos[2], mode);
     }
 
+    if (command == "nodes" || command == "node") {
+      return runNodesFamily(configPath, pos, command);
+    }
+
+    if (command == "devices") {
+      return runDevicesFamily(configPath, pos);
+    }
+
+    if (command == "canvas") {
+      return runCanvasFamily(configPath, pos);
+    }
+
     if (command == "message") {
       if (pos.size() >= 2 && pos[1] == "send") return runMessageSend(configPath, pos);
       if (pos.size() >= 2 && pos[1] == "react") return runMessageReact(configPath, pos);
@@ -2551,7 +2753,7 @@ int main(int argc, char** argv) {
       std::cerr << "Unknown image-fallbacks subcommand" << std::endl; return 1;
     }
 
-    std::set<std::string> compatTop = {"dashboard","reset","uninstall","update","acp","memory","nodes","devices","node","approvals","sandbox","dns","docs","hooks","webhooks","plugins","skills","tui","voicecall","directory"};
+    std::set<std::string> compatTop = {"dashboard","reset","uninstall","update","acp","memory","approvals","sandbox","dns","docs","hooks","webhooks","plugins","skills","tui","voicecall","directory"};
     if (compatTop.count(command)) return (printCompatNotImplemented(command, lang), 2);
 
     if (command != "run") {

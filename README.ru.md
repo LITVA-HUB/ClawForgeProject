@@ -250,6 +250,10 @@ scripts/smoke_stage13_setup_wizard.sh
 scripts/smoke_stage14_cron_semantics.sh
 scripts/smoke_stage15_message_channels.sh
 scripts/smoke_stage16_browser_oauth_message.sh
+scripts/smoke_stage18_native_browser.sh
+scripts/smoke_stage19_admin_dashboard.sh
+scripts/smoke_stage21_agents.sh
+scripts/smoke_stage22_nodes_canvas_devices.sh
 
 # строгая сборка (warning == error)
 cmake -S . -B build_warnings -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror'
@@ -291,7 +295,7 @@ scripts/benchmark_quick.sh 50
 - `browser/snapshot` пока диагностический stub (без реального DOM/скриншота)
 - `agent/agents` CLI пока baseline-only (list/show/create/delete/use/run + детерминированный fallback tasks/message/session), это не полная parity orchestration OpenClaw
 - Telegram пока baseline, а не full multi-channel экосистема
-- Нет Canvas/Nodes интеграции
+- Canvas/Nodes/Devices пока только в Stage 22 slice 1 baseline (безопасный локальный registry + structured stubs; без полного runtime-control)
 - Нет полной внешней orchestration-модели subagents
 
 Актуальный статус смотри в [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md).

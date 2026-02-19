@@ -1,4 +1,4 @@
-# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 21)
+# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 22 slice 1)
 
 Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
@@ -33,14 +33,14 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `approvals` | approvals workflow | stub | not mapped yet |
 | `channels` | channel providers mgmt | partial | telegram baseline: list/status/capabilities/resolve/add/remove |
 | `dashboard` | dashboard/ui | impossible-now | OpenClaw UI stack |
-| `devices` | devices control | stub | not mapped yet |
+| `devices` | devices control | partial | Stage 22 slice 1 baseline: `list|status|invoke` (read-safe baseline/stubbed invoke) |
 | `directory` | identity/directory | impossible-now | no directory backend in NexaClaw |
 | `dns` | dns ops | stub | not mapped yet |
 | `docs` | docs tooling | stub | not mapped yet |
 | `hooks` | hooks ops | stub | not mapped yet |
 | `memory` | memory tooling | stub | not mapped yet |
-| `node` | node mgmt | stub | not mapped yet |
-| `nodes` | nodes mgmt | stub | not mapped yet |
+| `node` | node mgmt | partial | Stage 22 slice 1 alias to `nodes` baseline (`list|status|describe|invoke`) |
+| `nodes` | nodes mgmt | partial | Stage 22 slice 1 baseline (`list|status|describe|invoke`) with safe local registry fallback |
 | `onboard` | onboarding flow | partial | `onboard` maps to bilingual setup wizard baseline |
 | `plugins` | plugin ops | stub | not mapped yet |
 | `reset` | reset ops | stub | not mapped yet |
@@ -97,6 +97,15 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - `channels capabilities` — **implemented baseline** (telegram static capability map)
 - `channels resolve --channel telegram <target>` — **implemented baseline**
 - `channels add/remove --channel telegram` — **implemented baseline** (config toggles)
+
+### Nodes / Node / Devices / Canvas (Stage 22 slice 1 baseline)
+- `nodes list|status|describe|invoke` — **implemented baseline** (local safe registry with `local-node` fallback)
+- `node ...` — **implemented baseline alias** of `nodes`
+- `devices list|status|invoke` — **implemented baseline** (mapped from node registry)
+- `canvas status|list` — **implemented baseline** (structured runtime-unavailable status)
+- `canvas snapshot|invoke` — **partial/stubbed** with explicit JSON errors (`canvas_runtime_unavailable`)
+- `gateway call` parity seed added: `nodes.*`, `devices.list`, `canvas.status`, `canvas.invoke`
+- safety contract: invoke paths are read-safe only in Stage 22 slice 1
 
 ### Agent / Agents (Stage 21 baseline)
 - `agents list` — **implemented baseline**
