@@ -24,8 +24,18 @@ PID=$!
 trap 'kill $PID >/dev/null 2>&1 || true' EXIT
 sleep 1
 
-curl -fsS http://127.0.0.1:18890/admin | grep -q 'NexaClaw Admin Dashboard'
-curl -fsS http://127.0.0.1:18890/api/admin/overview | grep -q '"ok": true'
+ADMIN_HTML=$(curl -fsS http://127.0.0.1:18890/admin)
+echo "$ADMIN_HTML" | grep -q 'NexaClaw Admin Console'
+echo "$ADMIN_HTML" | grep -q 'Sessions (recent first)'
+echo "$ADMIN_HTML" | grep -q 'Cron quick controls'
+
+overview=$(curl -fsS http://127.0.0.1:18890/api/admin/overview)
+echo "$overview" | grep -q '"ok": true'
+echo "$overview" | grep -q '"recentEvents"'
+echo "$overview" | grep -q '"cron"'
+
+curl -fsS http://127.0.0.1:18890/api/sessions | grep -q '"sessions"'
+curl -fsS http://127.0.0.1:18890/api/cron/jobs | grep -q '"jobs"'
 curl -fsS http://127.0.0.1:18890/api/admin/logs/tail?limit=5 | grep -q '"items"'
 curl -fsS http://127.0.0.1:18890/api/admin/audit/tail?limit=5 | grep -q '"items"'
 

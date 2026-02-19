@@ -7,7 +7,7 @@ NexaClaw — это локальный control plane: сессии, tools, cron,
 - 🇬🇧 English README: [README.md](./README.md)
 - Матрица parity: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
 - CLI parity таблица: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
-- Документация по стадиям: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE16](./docs/STAGE16.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
+- Документация по стадиям: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE16](./docs/STAGE16.md) · [STAGE18](./docs/STAGE18.md) · [STAGE19](./docs/STAGE19.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
 
 ---
 
@@ -23,7 +23,8 @@ NexaClaw — это локальный control plane: сессии, tools, cron,
 - Baseline управления каналами: `channels list|status|capabilities|resolve|add|remove` (telegram)
 - Task lane API (`/api/tasks`) с timeout/cancel baseline
 - Security baseline: auth token mode, rate limit по источнику, audit JSONL
-- Browser Stage 16 baseline через `openclaw_cli`: `status/open/navigate/snapshot/click/type/screenshot`
+- Browser relay Stage 18 baseline: native backend (`browser.backend=native`) для `status/open/navigate/snapshot/click/type/screenshot`, с fallback/compat через `openclaw_cli`
+- Admin dashboard Stage 19 slice 2: `/admin` как операторская консоль (KPI, refresh controls, сессии/cron, safe quick-actions, logs/audit tail)
 - RU/EN CLI UX + doctor + smoke/benchmark scripts
 
 ---

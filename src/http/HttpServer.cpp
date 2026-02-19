@@ -153,26 +153,89 @@ void HttpServer::setupRoutes() {
   server_.Get("/admin", [](const httplib::Request&, httplib::Response& res) {
     static const char* kAdminHtml = R"HTML(<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>NexaClaw Admin</title>
-<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:16px;background:#111;color:#eee}button{cursor:pointer}code,pre{background:#1b1b1b;color:#9fe;padding:8px;border-radius:6px;overflow:auto}.card{border:1px solid #333;border-radius:10px;padding:12px;margin:10px 0;background:#171717}.muted{color:#aaa}.row{display:flex;gap:8px;flex-wrap:wrap}input{background:#222;color:#eee;border:1px solid #444;padding:6px;border-radius:6px}</style>
-</head><body><h2>NexaClaw Admin Dashboard (Stage19 slice1)</h2>
-<div class="card"><div class="row"><label>Bearer token (optional): <input id="tok" type="password" placeholder="for gateway.auth=token"></label><button onclick="saveToken()">Save token</button><button onclick="refreshAll()">Refresh</button></div><div class="muted">Local/loopback dashboard. Non-destructive controls only.</div></div>
-<div class="card"><h3>Status</h3><pre id="status"></pre></div>
-<div class="card"><h3>Sessions</h3><pre id="sessions"></pre></div>
-<div class="card"><h3>Cron jobs</h3><div id="cronActions" class="muted"></div><pre id="cron"></pre></div>
-<div class="card"><h3>Recent events (logs)</h3><pre id="logs"></pre></div>
-<div class="card"><h3>Audit tail</h3><pre id="audit"></pre></div>
+<title>NexaClaw Admin Console</title>
+<style>
+:root{--bg:#0f1115;--card:#171a21;--line:#2a3240;--fg:#e7edf7;--muted:#9aabc3;--ok:#2ecc71;--warn:#f1c40f;--bad:#ff6b6b;--accent:#6da8ff}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.container{max-width:1280px;margin:0 auto;padding:16px} h1,h2,h3{margin:0 0 8px}
+.grid{display:grid;gap:12px}.g4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}.g2{grid-template-columns:1.25fr 1fr}
+.card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px;min-width:0}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}
+input,select,button{background:#10131a;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+button{cursor:pointer} button:hover{border-color:var(--accent)} .muted{color:var(--muted);font-size:13px}
+.kpi{font-size:26px;font-weight:700}.pill{padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
+.ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+.table{width:100%;border-collapse:collapse;font-size:13px} .table th,.table td{padding:6px;border-bottom:1px solid #233}
+.table th{text-align:left;color:var(--muted);font-weight:600} pre{margin:0;background:#0c0f14;border:1px solid #223;border-radius:10px;padding:10px;max-height:240px;overflow:auto;white-space:pre-wrap}
+.small{font-size:12px}
+</style>
+</head><body><div class="container">
+  <div class="row between">
+    <div><h1>NexaClaw Admin Console</h1><div class="muted">Stage19 slice2 — operator dashboard (local/loopback oriented)</div></div>
+    <div class="row"><span id="conn" class="pill">idle</span><span id="last" class="small muted"></span></div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <label>Bearer token <input id="tok" type="password" placeholder="optional"></label>
+      <button id="saveTok">Save token</button>
+      <label>Auto-refresh <select id="refreshMs"><option value="0">off</option><option value="3000">3s</option><option value="5000">5s</option><option value="10000" selected>10s</option><option value="30000">30s</option></select></label>
+      <button id="toggleAuto">Pause</button>
+      <button id="refreshBtn">Refresh now</button>
+    </div>
+    <div class="muted">Safe controls only in UI (cron run due/enable/disable). Auth/rate-limit middleware still enforced on /api.</div>
+  </div>
+
+  <div class="grid g4">
+    <div class="card"><div class="muted">Service</div><div id="kService" class="kpi">-</div><div id="kNow" class="small muted"></div></div>
+    <div class="card"><div class="muted">Uptime</div><div id="kUptime" class="kpi">-</div><div id="kAuth" class="small muted"></div></div>
+    <div class="card"><div class="muted">Sessions</div><div id="kSessions" class="kpi">0</div><div id="kSessionFresh" class="small muted"></div></div>
+    <div class="card"><div class="muted">Cron jobs</div><div id="kCron" class="kpi">0</div><div id="kCronHealth" class="small muted"></div></div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card"><h3>Sessions (recent first)</h3><div id="sessionsTbl"></div></div>
+    <div class="card"><h3>Cron quick controls</h3><div id="cronQuick" class="small"></div><pre id="cronRaw"></pre></div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card"><h3>Recent events</h3><pre id="logs"></pre></div>
+    <div class="card"><h3>Audit tail</h3><pre id="audit"></pre></div>
+  </div>
+
+  <div class="card"><h3>Overview raw JSON</h3><pre id="overview"></pre></div>
+</div>
 <script>
-const getTok=()=>localStorage.getItem('nexaclaw_admin_token')||'';
+const LS_TOKEN='nexaclaw_admin_token';
+const LS_REFRESH='nexaclaw_admin_refresh_ms';
+let timer=null, paused=false;
+const $=id=>document.getElementById(id);
+const getTok=()=>localStorage.getItem(LS_TOKEN)||'';
 const hdrs=()=>{const h={'Content-Type':'application/json'}; const t=getTok(); if(t) h['Authorization']='Bearer '+t; return h;};
-function saveToken(){localStorage.setItem('nexaclaw_admin_token',document.getElementById('tok').value||'');}
-async function jget(url){const r=await fetch(url,{headers:hdrs()}); const t=await r.text(); let d; try{d=JSON.parse(t);}catch{d={ok:false,error:t}}; if(!r.ok) throw d; return d;}
-async function jpost(url,body){const r=await fetch(url,{method:'POST',headers:hdrs(),body:JSON.stringify(body||{})}); const t=await r.text(); let d; try{d=JSON.parse(t);}catch{d={ok:false,error:t}}; if(!r.ok) throw d; return d;}
-const pr=(id,obj)=>document.getElementById(id).textContent=JSON.stringify(obj,null,2);
-async function loadCron(){const jobs=(await jget('/api/cron/jobs')).jobs||[]; pr('cron',jobs); const box=document.getElementById('cronActions'); box.innerHTML=''; jobs.slice(0,8).forEach(j=>{const wrap=document.createElement('div'); wrap.className='row'; wrap.innerHTML=`<b>${j.name||j.id}</b> <button data-id="${j.id}" data-a="run">Run now</button> <button data-id="${j.id}" data-a="enable">Enable</button> <button data-id="${j.id}" data-a="disable">Disable</button>`; box.appendChild(wrap);}); box.querySelectorAll('button').forEach(b=>b.onclick=async()=>{try{const id=b.dataset.id,a=b.dataset.a; const out=await jpost('/api/cron/jobs/'+id+'/'+a,{}); alert(JSON.stringify(out)); await loadCron();}catch(e){alert((e&&e.error)||JSON.stringify(e));}});
-}
-async function refreshAll(){document.getElementById('tok').value=getTok(); try{pr('status',await jget('/api/admin/overview'));pr('sessions',await jget('/api/sessions')); await loadCron(); pr('logs',await jget('/api/admin/logs/tail?limit=30')); pr('audit',await jget('/api/admin/audit/tail?limit=30'));}catch(e){pr('status',{ok:false,error:e&&e.error?e.error:JSON.stringify(e)});} }
-refreshAll(); setInterval(refreshAll,10000);
+const fmt=(o)=>JSON.stringify(o,null,2);
+const age=(iso)=>{if(!iso)return '-';const ms=Date.now()-Date.parse(iso);if(!Number.isFinite(ms))return iso;const s=Math.max(0,Math.floor(ms/1000));if(s<60)return s+'s ago';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago';};
+const msTo=(v)=>{v=Number(v||0);if(v<1000)return v+'ms';const s=Math.floor(v/1000);if(s<60)return s+'s';const m=Math.floor(s/60);if(m<60)return m+'m';const h=Math.floor(m/60);return h+'h';};
+async function jget(url){const r=await fetch(url,{headers:hdrs()});const t=await r.text();let d;try{d=JSON.parse(t);}catch{d={ok:false,error:t}};if(!r.ok)throw d;return d;}
+async function jpost(url,body){const r=await fetch(url,{method:'POST',headers:hdrs(),body:JSON.stringify(body||{})});const t=await r.text();let d;try{d=JSON.parse(t);}catch{d={ok:false,error:t}};if(!r.ok)throw d;return d;}
+function setConn(ok,msg){$('conn').textContent=msg;$('conn').className='pill '+(ok?'ok':'bad');$('last').textContent='Last: '+new Date().toLocaleTimeString();}
+function renderSessions(items){items=(items||[]).slice().sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
+ const rows=items.slice(0,20).map(s=>`<tr><td><code>${s.key||''}</code></td><td>${s.sessionId||''}</td><td>${s.updatedAt||''}</td><td>${age(s.updatedAt)}</td></tr>`).join('');
+ $('sessionsTbl').innerHTML=`<table class="table"><thead><tr><th>key</th><th>sessionId</th><th>updatedAt</th><th>age</th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="muted">No sessions</td></tr>'}</tbody></table>`;
+ $('kSessions').textContent=String(items.length);$('kSessionFresh').textContent=items[0]?('latest '+age(items[0].updatedAt)):'no activity';}
+function cronHealth(jobs){const total=jobs.length,en=jobs.filter(j=>j.enabled).length,err=jobs.filter(j=>(j.consecutiveErrors||0)>0).length;return `${en}/${total} enabled, ${err} with errors`;}
+function renderCron(jobs){jobs=jobs||[];$('kCron').textContent=String(jobs.length);$('kCronHealth').textContent=cronHealth(jobs);
+ const box=$('cronQuick'); box.innerHTML='';
+ jobs.slice(0,12).forEach(j=>{const d=document.createElement('div');d.className='row';d.innerHTML=`<span class="pill ${j.enabled?'ok':'warn'}">${j.enabled?'on':'off'}</span><b>${j.name||j.id}</b><span class="muted">next: ${j.nextRunAt||'-'}</span><span class="muted">last: ${j.lastRunAt||'-'}</span><span class="muted">err: ${j.consecutiveErrors||0}</span><button data-id="${j.id}" data-a="run">Run due</button><button data-id="${j.id}" data-a="enable">Enable</button><button data-id="${j.id}" data-a="disable">Disable</button>`;box.appendChild(d);});
+ box.querySelectorAll('button').forEach(b=>b.onclick=async()=>{const id=b.dataset.id,a=b.dataset.a;try{if(a==='run') await jpost('/api/cron/jobs/'+id+'/run',{mode:'due'}); else await jpost('/api/cron/jobs/'+id+'/'+a,{}); await refreshAll();}catch(e){alert((e&&e.error)||fmt(e));}});
+ $('cronRaw').textContent=fmt(jobs.slice(0,20));}
+function applyOverview(o){$('overview').textContent=fmt(o);$('kService').textContent=o.service||'nexaclaw';$('kNow').textContent=o.now||'';$('kUptime').textContent=msTo(o.uptimeMs||0);$('kAuth').textContent='auth: '+(o.authMode||'off');}
+async function refreshAll(){ $('tok').value=getTok(); try{const [ov,ss,cr,lg,au]=await Promise.all([jget('/api/admin/overview'),jget('/api/sessions'),jget('/api/cron/jobs'),jget('/api/admin/logs/tail?limit=40'),jget('/api/admin/audit/tail?limit=40')]); applyOverview(ov); renderSessions(ss.sessions||[]); renderCron(cr.jobs||[]); $('logs').textContent=fmt(lg.items||lg); $('audit').textContent=fmt(au.items||au); setConn(true,'ok'); }catch(e){$('overview').textContent=fmt({ok:false,error:e&&e.error?e.error:fmt(e)}); setConn(false,'error');}}
+function resetTimer(){ if(timer){clearInterval(timer);timer=null;} const ms=Number($('refreshMs').value||0); if(ms>0&&!paused){timer=setInterval(refreshAll,ms);} }
+$('saveTok').onclick=()=>{localStorage.setItem(LS_TOKEN,$('tok').value||'');};
+$('refreshBtn').onclick=refreshAll;
+$('refreshMs').onchange=()=>{localStorage.setItem(LS_REFRESH,$('refreshMs').value);resetTimer();};
+$('toggleAuto').onclick=()=>{paused=!paused;$('toggleAuto').textContent=paused?'Resume':'Pause';resetTimer();};
+(function init(){ $('tok').value=getTok(); const saved=localStorage.getItem(LS_REFRESH)||'10000'; $('refreshMs').value=saved; resetTimer(); refreshAll(); })();
 </script></body></html>)HTML";
     res.set_content(kAdminHtml, "text/html; charset=utf-8");
   });
@@ -188,6 +251,35 @@ refreshAll(); setInterval(refreshAll,10000);
   });
 
   server_.Get("/api/admin/overview", [&](const httplib::Request&, httplib::Response& res) {
+    auto sessions = sessions_.listSessions();
+    std::sort(sessions.begin(), sessions.end(), [](const auto& a, const auto& b) { return a.updatedAt > b.updatedAt; });
+
+    const auto jobs = cron_.listJobs();
+    int enabledJobs = 0;
+    int jobsWithErrors = 0;
+    for (const auto& j : jobs) {
+      if (j.enabled) ++enabledJobs;
+      if (j.consecutiveErrors > 0) ++jobsWithErrors;
+    }
+
+    json recentSessions = json::array();
+    for (std::size_t i = 0; i < std::min<std::size_t>(sessions.size(), 10); ++i) {
+      recentSessions.push_back({{"key", sessions[i].key}, {"sessionId", sessions[i].sessionId}, {"updatedAt", sessions[i].updatedAt}});
+    }
+
+    json cronSample = json::array();
+    for (std::size_t i = 0; i < std::min<std::size_t>(jobs.size(), 10); ++i) {
+      const auto& j = jobs[i];
+      cronSample.push_back({{"id", j.id},
+                            {"name", j.name},
+                            {"kind", j.kind},
+                            {"enabled", j.enabled},
+                            {"nextRunAt", j.nextRunAt},
+                            {"lastRunAt", j.lastRunAt},
+                            {"lastSuccessAt", j.lastSuccessAt},
+                            {"consecutiveErrors", j.consecutiveErrors}});
+    }
+
     const auto cronStatus = cron_.status();
     const auto browserStatus = browser_.status();
     replyJson(res, {{"ok", true},
@@ -195,10 +287,15 @@ refreshAll(); setInterval(refreshAll,10000);
                     {"now", util::TimeUtil::nowIso8601()},
                     {"uptimeMs", util::TimeUtil::nowMillis() - startedAtMs_},
                     {"authMode", authConfig_.mode},
-                    {"sessions", {{"count", sessions_.listSessions().size()}}},
+                    {"sessions", {{"count", sessions.size()}, {"recent", recentSessions}}},
                     {"tasks", {{"summary", tasks_.list().value("summary", json::object())}}},
-                    {"cron", {{"status", cronStatus}, {"count", cron_.listJobs().size()}}},
-                    {"browser", browserStatus}});
+                    {"cron", {{"status", cronStatus},
+                              {"count", jobs.size()},
+                              {"enabled", enabledJobs},
+                              {"jobsWithErrors", jobsWithErrors},
+                              {"sample", cronSample}}},
+                    {"browser", browserStatus},
+                    {"recentEvents", readEventTail(10)}});
   });
 
   server_.Get("/api/admin/audit/tail", [&](const httplib::Request& req, httplib::Response& res) {

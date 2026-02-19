@@ -1,6 +1,6 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 19 slice 1 (admin dashboard baseline for browser-first operations control).
+> Updated after Stage 19 slice 2 (admin dashboard polish/deepening for browser-first operations control).
 
 ## Practical parity matrix
 
@@ -21,7 +21,7 @@
 | OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + explicit stubs for not-yet branches |
 | Telegram channel baseline | ✅ | ⚠️ | Partial | polling+pairing, no webhooks/sharding |
 | Browser relay endpoints | ✅ | ⚠️ | Partial (Stage 18 slice 1 baseline) | Native backend baseline (`browser.backend=native`) for core flow + `openclaw_cli` fallback for real OpenClaw automation |
-| Browser admin dashboard | ✅ | ⚠️ | Partial (Stage 19 slice 1 baseline) | `/admin` local web UI + `/api/admin/overview`, `/api/admin/logs/tail`, `/api/admin/audit/tail`, explicit non-destructive cron action buttons |
+| Browser admin dashboard | ✅ | ⚠️ | Partial (Stage 19 slice 2 polished) | `/admin` operator console UX (KPIs, refresh controls, denser sessions/cron visibility), enriched `/api/admin/overview`, safe cron quick-actions (`run due`/enable/disable), logs/audit tail |
 | Realtime events | ✅ | ✅ | Closed | SSE + EventBus |
 | Async task/job lane | ✅ | ⚠️ | Partial | internal queue, single worker |
 | Rate limiting + audit trail + recovery | ✅ | ✅ | Closed (baseline) | source RL, JSONL audit, task restore |

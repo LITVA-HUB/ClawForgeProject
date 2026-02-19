@@ -24,7 +24,7 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 - Task lane API (`/api/tasks`) with timeout/cancel baseline
 - Security baseline: auth token mode, per-source rate limiting, audit JSONL
 - Browser relay Stage 18 baseline: native backend (`browser.backend=native`) for `status/open/navigate/snapshot/click/type/screenshot`, with `openclaw_cli` fallback/compat mode
-- Admin dashboard Stage 19 slice 1 baseline: `/admin` web UI for health/status, sessions, cron overview + safe actions, event-log tail, and audit tail
+- Admin dashboard Stage 19 slice 2 operator console: `/admin` with KPI cards, refresh controls, session/cron visibility (state/next/last/errors), safe cron quick actions, event-log tail, and audit tail
 - RU/EN CLI UX + doctor + smoke/benchmark scripts
 
 ---

@@ -1,19 +1,19 @@
-# STAGE19 — Browser Admin Dashboard Baseline (slice 1)
+# STAGE19 — Browser Admin Dashboard (slice 1 + slice 2)
 
 ## Goal
-Ship a lightweight built-in web admin dashboard (served by NexaClaw HTTP server) so operator can monitor and control core runtime from browser, with Telegram-only communication still sufficient.
+Ship a built-in browser admin console (`/admin`) that is actually useful for day-to-day operator work: health visibility, session/cron insight, recent logs/audit, and safe quick actions.
 
-## Delivered (slice 1)
+## Slice 1 (baseline, already delivered)
 
 ### 1) Admin UI route
 - Added `GET /admin` returning embedded HTML/JS dashboard.
-- Dashboard sections:
+- Initial sections:
   - health/status overview
   - sessions overview
   - cron jobs overview
   - recent logs tail (EventBus events)
   - audit tail (JSONL file)
-- Quick control actions include explicit buttons for **non-destructive** cron ops:
+- Quick control actions (non-destructive):
   - run now
   - enable
   - disable
@@ -25,26 +25,66 @@ Reused existing endpoints:
 - `/api/cron/jobs`
 - `/api/cron/jobs/{id}/run|enable|disable`
 
-Added missing admin-focused read endpoints:
+Added admin-focused read endpoints:
 - `GET /api/admin/overview`
 - `GET /api/admin/logs/tail?limit=N`
 - `GET /api/admin/audit/tail?limit=N`
 
-All return JSON with `ok` and bounded `limit` behavior.
-
 ### 3) Security posture
-- Dashboard designed for local/loopback deployment assumptions.
-- Existing `/api/*` auth/rate-limit guard remains in force; dashboard supports optional Bearer token in browser local storage.
-- No delete/remove job action exposed in UI.
+- Existing `/api/*` auth + rate-limit middleware stays active.
+- Dashboard supports optional Bearer token in browser local storage.
+- No destructive cron delete/remove in UI.
 
 ### 4) Smoke coverage
-- Added `scripts/smoke_stage19_admin_dashboard.sh`:
-  - validates `/admin` is served
-  - validates new admin endpoints
-  - validates cron run wiring from admin-related flow
-- Integrated into `scripts/smoke_full.sh`.
+- `scripts/smoke_stage19_admin_dashboard.sh` validates `/admin`, admin endpoints, and cron action wiring.
+
+---
+
+## Slice 2 (polish/deepening)
+
+### 1) `/admin` upgraded from baseline page to operator console
+- Reworked UI layout for higher information density:
+  - top health strip + connection state
+  - KPI cards (service/uptime/sessions/cron health)
+  - sessions table sorted by recency
+  - cron quick-control area with visible run/error fields
+  - logs/audit panes + raw overview pane for drilldown
+- Added practical controls:
+  - auto-refresh interval selector (`off/3s/5s/10s/30s`)
+  - pause/resume auto-refresh
+  - explicit manual refresh
+  - token save/reuse in local storage
+
+### 2) Observability details improved
+- UI now exposes important operational fields directly:
+  - sessions: key/sessionId/updatedAt/age
+  - cron: enabled state, next run, last run, consecutive error count
+  - overview: recent events and rich status blocks
+- Cron action defaults are safer by default:
+  - quick “Run” uses `mode: "due"` (non-force path)
+
+### 3) Minimal API enhancement (reuse-first)
+- Kept existing endpoint surface and reused existing `/api/sessions`, `/api/cron/jobs`, `/api/admin/logs/tail`, `/api/admin/audit/tail`.
+- Enriched `GET /api/admin/overview` with:
+  - recent sessions sample
+  - cron summary (`enabled`, `jobsWithErrors`) + job sample
+  - recent event sample
+- Errors remain strict JSON objects with `ok/error` conventions used across API.
+
+### 4) Security posture (unchanged + reinforced)
+- No new unsafe/destructive UI controls exposed.
+- `/api/*` auth middleware is still the single gatekeeper.
+- Dashboard remains local/loopback operational console by design.
+
+### 5) Smoke coverage extended
+- `scripts/smoke_stage19_admin_dashboard.sh` now verifies:
+  - upgraded `/admin` sections are present
+  - `/api/admin/overview` returns enriched fields used by UI
+  - `/api/sessions` + `/api/cron/jobs` wiring required by UI
+  - admin logs/audit tails and safe cron run path
 
 ## Notes / known limits
-- Dashboard is intentionally lightweight (no SPA framework, embedded page).
-- `logs/tail` currently reflects recent EventBus entries, not arbitrary external process log files.
-- Future slices can add pagination, richer filtering, auth UX hardening, and role-based action policies.
+- Embedded static dashboard (no SPA framework), intentionally dependency-light.
+- Log tail is EventBus-derived; not a full process log index.
+- No pagination/search yet for large session/job sets.
+- No RBAC model yet; relies on existing API auth mode and deployment perimeter.
