@@ -1,5 +1,6 @@
 #include "core/EventBus.hpp"
 
+#include <algorithm>
 #include <chrono>
 
 #include "util/TimeUtil.hpp"
@@ -16,6 +17,14 @@ std::optional<Event> EventBus::Subscriber::waitNext(int timeoutMs) {
 EventBus::Subscriber EventBus::subscribe() {
   std::lock_guard<std::mutex> lock(mutex_);
   return Subscriber(this, nextId_);
+}
+
+std::vector<Event> EventBus::recent(std::size_t limit) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (limit == 0 || events_.empty()) return {};
+  const std::size_t take = std::min(limit, events_.size());
+  const auto begin = events_.end() - static_cast<long>(take);
+  return std::vector<Event>(begin, events_.end());
 }
 
 void EventBus::publish(std::string type, nlohmann::json data) {

@@ -14,6 +14,7 @@ scripts/smoke_stage14_cron_semantics.sh >/dev/null
 scripts/smoke_stage15_message_channels.sh >/dev/null
 scripts/smoke_stage16_browser_oauth_message.sh >/dev/null
 scripts/smoke_stage18_native_browser.sh >/dev/null
+scripts/smoke_stage19_admin_dashboard.sh >/dev/null
 
 BIN="${BIN:-./build/nexaclaw}"
 if [[ ! -x "$BIN" && -x ./build/clawforge ]]; then

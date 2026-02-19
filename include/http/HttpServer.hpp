@@ -1,9 +1,11 @@
 #pragma once
 
+#include <filesystem>
 #include <memory>
 #include <string>
 
 #include <httplib.h>
+#include <nlohmann/json.hpp>
 
 #include "agent/AgentEngine.hpp"
 #include "automation/CronScheduler.hpp"
@@ -45,12 +47,16 @@ class HttpServer {
   core::GatewayAuthConfig authConfig_;
   security::RateLimiter rateLimiter_;
   core::AuditTrail audit_;
+  std::filesystem::path auditFilePath_;
   int64_t startedAtMs_{0};
 
   httplib::Server server_;
 
   void setupRoutes();
   std::string deriveApiSessionKey(const nlohmann::json& body) const;
+  static int parsePositiveLimit(const httplib::Request& req, const std::string& key, int fallback, int maxValue);
+  nlohmann::json readAuditTail(int limit) const;
+  nlohmann::json readEventTail(int limit) const;
 };
 
 }  // namespace clawforge::http

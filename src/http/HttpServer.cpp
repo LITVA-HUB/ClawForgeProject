@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
 
 #include <nlohmann/json.hpp>
 
@@ -46,6 +48,7 @@ HttpServer::HttpServer(std::string host, int port, agent::AgentEngine& agent,
       authConfig_(std::move(authConfig)),
       rateLimiter_(rateLimitConfig.enabled, rateLimitConfig.maxRequests, rateLimitConfig.windowMs),
       audit_(auditConfig.enabled, auditConfig.file),
+      auditFilePath_(auditConfig.file),
       startedAtMs_(startedAtMs) {
   setupRoutes();
 }
@@ -56,6 +59,53 @@ std::string HttpServer::deriveApiSessionKey(const nlohmann::json& body) const {
   const std::string peerId = body.value("peerId", "");
   const std::string channelId = body.value("channelId", "api");
   return agent_.deriveSessionKey(channelId, peerId);
+}
+
+int HttpServer::parsePositiveLimit(const httplib::Request& req, const std::string& key, int fallback, int maxValue) {
+  if (!req.has_param(key)) return fallback;
+  try {
+    const int value = std::stoi(req.get_param_value(key));
+    return std::max(1, std::min(value, maxValue));
+  } catch (...) {
+    return fallback;
+  }
+}
+
+nlohmann::json HttpServer::readAuditTail(int limit) const {
+  json rows = json::array();
+  if (limit <= 0) return rows;
+
+  std::ifstream in(auditFilePath_);
+  if (!in) return rows;
+
+  std::vector<std::string> buffer;
+  buffer.reserve(static_cast<std::size_t>(limit));
+  std::string line;
+  while (std::getline(in, line)) {
+    if (line.empty()) continue;
+    buffer.push_back(line);
+    if (static_cast<int>(buffer.size()) > limit) {
+      buffer.erase(buffer.begin());
+    }
+  }
+
+  for (const auto& raw : buffer) {
+    auto parsed = json::parse(raw, nullptr, false);
+    if (parsed.is_discarded()) {
+      rows.push_back({{"raw", raw}});
+    } else {
+      rows.push_back(parsed);
+    }
+  }
+  return rows;
+}
+
+nlohmann::json HttpServer::readEventTail(int limit) const {
+  json rows = json::array();
+  for (const auto& e : events_.recent(static_cast<std::size_t>(std::max(1, limit)))) {
+    rows.push_back({{"id", e.id}, {"type", e.type}, {"ts", e.ts}, {"data", e.data}});
+  }
+  return rows;
 }
 
 void HttpServer::setupRoutes() {
@@ -100,6 +150,33 @@ void HttpServer::setupRoutes() {
     replyJson(res, {{"ok", true}, {"service", "nexaclaw"}});
   });
 
+  server_.Get("/admin", [](const httplib::Request&, httplib::Response& res) {
+    static const char* kAdminHtml = R"HTML(<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NexaClaw Admin</title>
+<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:16px;background:#111;color:#eee}button{cursor:pointer}code,pre{background:#1b1b1b;color:#9fe;padding:8px;border-radius:6px;overflow:auto}.card{border:1px solid #333;border-radius:10px;padding:12px;margin:10px 0;background:#171717}.muted{color:#aaa}.row{display:flex;gap:8px;flex-wrap:wrap}input{background:#222;color:#eee;border:1px solid #444;padding:6px;border-radius:6px}</style>
+</head><body><h2>NexaClaw Admin Dashboard (Stage19 slice1)</h2>
+<div class="card"><div class="row"><label>Bearer token (optional): <input id="tok" type="password" placeholder="for gateway.auth=token"></label><button onclick="saveToken()">Save token</button><button onclick="refreshAll()">Refresh</button></div><div class="muted">Local/loopback dashboard. Non-destructive controls only.</div></div>
+<div class="card"><h3>Status</h3><pre id="status"></pre></div>
+<div class="card"><h3>Sessions</h3><pre id="sessions"></pre></div>
+<div class="card"><h3>Cron jobs</h3><div id="cronActions" class="muted"></div><pre id="cron"></pre></div>
+<div class="card"><h3>Recent events (logs)</h3><pre id="logs"></pre></div>
+<div class="card"><h3>Audit tail</h3><pre id="audit"></pre></div>
+<script>
+const getTok=()=>localStorage.getItem('nexaclaw_admin_token')||'';
+const hdrs=()=>{const h={'Content-Type':'application/json'}; const t=getTok(); if(t) h['Authorization']='Bearer '+t; return h;};
+function saveToken(){localStorage.setItem('nexaclaw_admin_token',document.getElementById('tok').value||'');}
+async function jget(url){const r=await fetch(url,{headers:hdrs()}); const t=await r.text(); let d; try{d=JSON.parse(t);}catch{d={ok:false,error:t}}; if(!r.ok) throw d; return d;}
+async function jpost(url,body){const r=await fetch(url,{method:'POST',headers:hdrs(),body:JSON.stringify(body||{})}); const t=await r.text(); let d; try{d=JSON.parse(t);}catch{d={ok:false,error:t}}; if(!r.ok) throw d; return d;}
+const pr=(id,obj)=>document.getElementById(id).textContent=JSON.stringify(obj,null,2);
+async function loadCron(){const jobs=(await jget('/api/cron/jobs')).jobs||[]; pr('cron',jobs); const box=document.getElementById('cronActions'); box.innerHTML=''; jobs.slice(0,8).forEach(j=>{const wrap=document.createElement('div'); wrap.className='row'; wrap.innerHTML=`<b>${j.name||j.id}</b> <button data-id="${j.id}" data-a="run">Run now</button> <button data-id="${j.id}" data-a="enable">Enable</button> <button data-id="${j.id}" data-a="disable">Disable</button>`; box.appendChild(wrap);}); box.querySelectorAll('button').forEach(b=>b.onclick=async()=>{try{const id=b.dataset.id,a=b.dataset.a; const out=await jpost('/api/cron/jobs/'+id+'/'+a,{}); alert(JSON.stringify(out)); await loadCron();}catch(e){alert((e&&e.error)||JSON.stringify(e));}});
+}
+async function refreshAll(){document.getElementById('tok').value=getTok(); try{pr('status',await jget('/api/admin/overview'));pr('sessions',await jget('/api/sessions')); await loadCron(); pr('logs',await jget('/api/admin/logs/tail?limit=30')); pr('audit',await jget('/api/admin/audit/tail?limit=30'));}catch(e){pr('status',{ok:false,error:e&&e.error?e.error:JSON.stringify(e)});} }
+refreshAll(); setInterval(refreshAll,10000);
+</script></body></html>)HTML";
+    res.set_content(kAdminHtml, "text/html; charset=utf-8");
+  });
+
   server_.Get("/api/status", [&](const httplib::Request&, httplib::Response& res) {
     replyJson(res, {{"ok", true},
                     {"service", "nexaclaw"},
@@ -108,6 +185,30 @@ void HttpServer::setupRoutes() {
                     {"sessions", {{"count", sessions_.listSessions().size()}}},
                     {"jobs", {{"count", cron_.listJobs().size()}}},
                     {"tools", {{"count", tools_.list().size()}, {"allowed", tools_.allowedTools()}}}});
+  });
+
+  server_.Get("/api/admin/overview", [&](const httplib::Request&, httplib::Response& res) {
+    const auto cronStatus = cron_.status();
+    const auto browserStatus = browser_.status();
+    replyJson(res, {{"ok", true},
+                    {"service", "nexaclaw"},
+                    {"now", util::TimeUtil::nowIso8601()},
+                    {"uptimeMs", util::TimeUtil::nowMillis() - startedAtMs_},
+                    {"authMode", authConfig_.mode},
+                    {"sessions", {{"count", sessions_.listSessions().size()}}},
+                    {"tasks", {{"summary", tasks_.list().value("summary", json::object())}}},
+                    {"cron", {{"status", cronStatus}, {"count", cron_.listJobs().size()}}},
+                    {"browser", browserStatus}});
+  });
+
+  server_.Get("/api/admin/audit/tail", [&](const httplib::Request& req, httplib::Response& res) {
+    const int limit = parsePositiveLimit(req, "limit", 30, 200);
+    replyJson(res, {{"ok", true}, {"limit", limit}, {"path", auditFilePath_.string()}, {"items", readAuditTail(limit)}});
+  });
+
+  server_.Get("/api/admin/logs/tail", [&](const httplib::Request& req, httplib::Response& res) {
+    const int limit = parsePositiveLimit(req, "limit", 30, 200);
+    replyJson(res, {{"ok", true}, {"limit", limit}, {"items", readEventTail(limit)}});
   });
 
   server_.Get("/api/events/stream", [&](const httplib::Request&, httplib::Response& res) {

@@ -1,10 +1,10 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 18 slice 1 (native browser backend baseline + OpenClaw CLI fallback).
+> Updated after Stage 19 slice 1 (admin dashboard baseline for browser-first operations control).
 
 ## Practical parity matrix
 
-| Area | OpenClaw | NexaClaw (Stage 18-s1) | Status | Notes |
+| Area | OpenClaw | NexaClaw (Stage 19-s1) | Status | Notes |
 |---|---|---|---|---|
 | HTTP API `/health`, `/api/message`, `/api/status` | ✅ | ✅ | Closed | Stable local gateway |
 | Session store | ✅ | ✅ | Closed | File-backed sessions |
@@ -21,6 +21,7 @@
 | OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + explicit stubs for not-yet branches |
 | Telegram channel baseline | ✅ | ⚠️ | Partial | polling+pairing, no webhooks/sharding |
 | Browser relay endpoints | ✅ | ⚠️ | Partial (Stage 18 slice 1 baseline) | Native backend baseline (`browser.backend=native`) for core flow + `openclaw_cli` fallback for real OpenClaw automation |
+| Browser admin dashboard | ✅ | ⚠️ | Partial (Stage 19 slice 1 baseline) | `/admin` local web UI + `/api/admin/overview`, `/api/admin/logs/tail`, `/api/admin/audit/tail`, explicit non-destructive cron action buttons |
 | Realtime events | ✅ | ✅ | Closed | SSE + EventBus |
 | Async task/job lane | ✅ | ⚠️ | Partial | internal queue, single worker |
 | Rate limiting + audit trail + recovery | ✅ | ✅ | Closed (baseline) | source RL, JSONL audit, task restore |

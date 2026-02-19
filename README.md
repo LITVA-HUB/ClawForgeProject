@@ -7,7 +7,7 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 - 🇷🇺 Russian README: [README.ru.md](./README.ru.md)
 - Parity matrix: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
 - CLI parity table: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
-- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE16](./docs/STAGE16.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
+- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE16](./docs/STAGE16.md) · [STAGE18](./docs/STAGE18.md) · [STAGE19](./docs/STAGE19.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
 
 ---
 
@@ -24,6 +24,7 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 - Task lane API (`/api/tasks`) with timeout/cancel baseline
 - Security baseline: auth token mode, per-source rate limiting, audit JSONL
 - Browser relay Stage 18 baseline: native backend (`browser.backend=native`) for `status/open/navigate/snapshot/click/type/screenshot`, with `openclaw_cli` fallback/compat mode
+- Admin dashboard Stage 19 slice 1 baseline: `/admin` web UI for health/status, sessions, cron overview + safe actions, event-log tail, and audit tail
 - RU/EN CLI UX + doctor + smoke/benchmark scripts
 
 ---
@@ -249,6 +250,8 @@ scripts/smoke_stage13_setup_wizard.sh
 scripts/smoke_stage14_cron_semantics.sh
 scripts/smoke_stage15_message_channels.sh
 scripts/smoke_stage16_browser_oauth_message.sh
+scripts/smoke_stage18_native_browser.sh
+scripts/smoke_stage19_admin_dashboard.sh
 
 # strict compile gates
 cmake -S . -B build_warnings -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror'
