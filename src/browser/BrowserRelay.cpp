@@ -2,11 +2,14 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <regex>
 #include <sstream>
+#include <thread>
 #include <vector>
 #include <iomanip>
 
@@ -92,6 +95,25 @@ std::string decodeDataHtml(const std::string& url) {
 
 std::string stripTags(const std::string& s) {
   return std::regex_replace(s, std::regex("<[^>]*>"), " ");
+}
+
+bool containsCaseInsensitive(const std::string& haystack, const std::string& needle) {
+  if (needle.empty()) return true;
+  return lowerCopy(haystack).find(lowerCopy(needle)) != std::string::npos;
+}
+
+std::string nativeSearchCorpus(const clawforge::browser::BrowserRelay::NativeTarget& t) {
+  std::string corpus = t.title + "\n" + t.url + "\n" + stripTags(t.html);
+  for (const auto& [ref, info] : t.refs) {
+    (void)ref;
+    if (!info.name.empty()) corpus += "\n" + info.name;
+    if (!info.text.empty()) corpus += "\n" + info.text;
+  }
+  for (const auto& [ref, value] : t.typedValues) {
+    (void)ref;
+    if (!value.empty()) corpus += "\n" + value;
+  }
+  return collapseWhitespace(corpus);
 }
 
 std::string urlEncode(const std::string& s) {
@@ -1176,8 +1198,110 @@ nlohmann::json BrowserRelay::nativeAct(const nlohmann::json& request, const std:
   }
 
   if (kind == "wait") {
-    const int timeMs = request.value("timeMs", 0);
-    return {{"ok", true}, {"action", "act"}, {"kind", kind}, {"waitedMs", timeMs > 0 ? timeMs : 0}, {"nativeMode", "documented-noop"}};
+    const int timeoutMs = std::max(0, request.value("timeoutMs", 20000));
+    const int timeMs = std::max(0, request.value("timeMs", 0));
+    const std::string text = trim(request.value("text", ""));
+    const std::string textGone = trim(request.value("textGone", ""));
+    const std::string selector = trim(request.value("selector", ""));
+    const std::string urlPattern = trim(request.value("url", ""));
+    const std::string loadState = trim(request.value("loadState", ""));
+    const std::string fn = trim(request.value("fn", ""));
+
+    if (!selector.empty()) return capabilityError("wait.selector", "native backend does not implement wait.selector", "native_capability_wait_selector_unsupported");
+    if (!urlPattern.empty()) return capabilityError("wait.url", "native backend does not implement wait.url", "native_capability_wait_url_unsupported");
+    if (!loadState.empty()) return capabilityError("wait.loadState", "native backend does not implement wait.loadState", "native_capability_wait_load_state_unsupported");
+    if (!fn.empty()) return capabilityError("wait.fn", "native backend does not implement wait.fn", "native_capability_wait_fn_unsupported");
+
+    auto resolveTargetId = [&]() {
+      std::lock_guard<std::mutex> lock(nativeMu_);
+      nativeLoadStateLocked();
+      if (!resolvedTargetId.empty() && nativeTargets_.count(resolvedTargetId) > 0) return resolvedTargetId;
+      if (!nativeLastTargetId_.empty() && nativeTargets_.count(nativeLastTargetId_) > 0) return nativeLastTargetId_;
+      return std::string();
+    };
+
+    const bool needsTarget = !text.empty() || !textGone.empty();
+    const std::string waitTargetId = resolveTargetId();
+    if (needsTarget && waitTargetId.empty()) {
+      return {{"ok", false}, {"error", "no active target"}, {"code", "browser_act_no_active_target"}, {"kind", kind}};
+    }
+
+    auto targetContains = [&](const std::string& expected) {
+      std::lock_guard<std::mutex> lock(nativeMu_);
+      nativeLoadStateLocked();
+      const auto it = nativeTargets_.find(waitTargetId);
+      if (it == nativeTargets_.end()) return false;
+      return containsCaseInsensitive(nativeSearchCorpus(it->second), expected);
+    };
+
+    int waitedMs = 0;
+    if (timeMs > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(timeMs));
+      waitedMs += timeMs;
+    }
+
+    const auto waitUntil = [&](const std::function<bool()>& cond) {
+      if (cond()) return true;
+      const int budget = std::max(0, timeoutMs);
+      int elapsed = 0;
+      const int tickMs = 50;
+      while (elapsed < budget) {
+        const int step = std::min(tickMs, budget - elapsed);
+        if (step <= 0) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(step));
+        elapsed += step;
+        waitedMs += step;
+        if (cond()) return true;
+      }
+      return cond();
+    };
+
+    if (!text.empty()) {
+      const bool ok = waitUntil([&]() { return targetContains(text); });
+      if (!ok) {
+        return {{"ok", false},
+                {"action", "act"},
+                {"kind", kind},
+                {"targetId", waitTargetId},
+                {"code", "native_wait_text_timeout"},
+                {"error", "wait timed out before text became visible in native target corpus"},
+                {"text", text},
+                {"timeoutMs", timeoutMs},
+                {"waitedMs", waitedMs}};
+      }
+    }
+
+    if (!textGone.empty()) {
+      const bool ok = waitUntil([&]() { return !targetContains(textGone); });
+      if (!ok) {
+        return {{"ok", false},
+                {"action", "act"},
+                {"kind", kind},
+                {"targetId", waitTargetId},
+                {"code", "native_wait_text_gone_timeout"},
+                {"error", "wait timed out before text disappeared in native target corpus"},
+                {"textGone", textGone},
+                {"timeoutMs", timeoutMs},
+                {"waitedMs", waitedMs}};
+      }
+    }
+
+    if (!waitTargetId.empty()) {
+      std::lock_guard<std::mutex> lock(nativeMu_);
+      nativeLoadStateLocked();
+      if (nativeTargets_.count(waitTargetId) > 0) nativeLastTargetId_ = waitTargetId;
+      nativeSaveStateLocked();
+    }
+
+    nlohmann::json out{{"ok", true},
+                       {"action", "act"},
+                       {"kind", kind},
+                       {"waitedMs", waitedMs},
+                       {"timeoutMs", timeoutMs}};
+    if (!waitTargetId.empty()) out["targetId"] = waitTargetId;
+    if (!text.empty()) out["text"] = text;
+    if (!textGone.empty()) out["textGone"] = textGone;
+    return out;
   }
 
   if (kind == "close") {

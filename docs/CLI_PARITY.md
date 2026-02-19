@@ -73,7 +73,8 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - stage26 parity slice: added `/api/browser/act`, `gateway call browser.act`, and CLI `browser act --json` with OpenClaw-compatible request envelope (`request.kind/ref/text/...`)
 - stage27 parity slice expanded `act` kinds toward OpenClaw (`click,type,press,hover,scrollIntoView,drag,select,fill,resize,wait,evaluate,close` envelope coverage)
 - stage28 realism slice adds native `act.evaluate` via a constrained JS runtime model (`location`, `document.title`, optional element model for `ref`) with deterministic state mutation plumbing
-- native `act` now supports `click`, `type`, `press` (Enter-only with explicit non-Enter capability error), `wait` (documented no-op), `close`, `hover`, `scrollIntoView`, `fill`, `resize`, and `evaluate` (sync-only)
+- native `act` now supports `click`, `type`, `press` (Enter-only with explicit non-Enter capability error), `wait` (real `timeMs`/`text`/`textGone` polling lifecycle with timeout errors), `close`, `hover`, `scrollIntoView`, `fill`, `resize`, and `evaluate` (sync-only)
+- Stage30 parity uplift: native `act.wait` returns structured capability-gated errors for unsupported Playwright wait selectors (`selector`, `url`, `loadState`, `fn`) instead of pretending success
 - native unsupported runtime kinds (`drag/select`) return structured capability-gated errors (`native_capability_kind_unsupported`) instead of silent behavior
 - native evaluate async paths are explicitly capability-gated with structured `native_capability_evaluate_async_unsupported`
 - openclaw_cli backend now dispatches most OpenClaw `act` kinds directly to corresponding `openclaw browser <cmd>` commands; unsupported kinds still return explicit structured errors (`openclaw_cli_act_kind_unsupported_in_nexaclaw`)

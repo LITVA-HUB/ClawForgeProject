@@ -1,10 +1,10 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 29 agent orchestration uplift slice.
+> Updated after Stage 30 browser runtime wait/textGone fidelity slice.
 
 ## Practical parity matrix
 
-| Area | OpenClaw | NexaClaw (Stage 29) | Status | Notes |
+| Area | OpenClaw | NexaClaw (Stage 30) | Status | Notes |
 |---|---|---|---|---|
 | HTTP API `/health`, `/api/message`, `/api/status` | ✅ | ✅ | Closed | Stable local gateway |
 | Session store | ✅ | ✅ | Closed | File-backed sessions |
@@ -21,7 +21,7 @@
 | Models auth parity beyond API keys | ✅ | ⚠️ | Partial (Stage 17 slice 2) | Native device-code start/login/poll baseline for `openai-codex` + legacy OpenClaw import bridge fallback |
 | OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + explicit stubs for not-yet branches |
 | Telegram channel baseline | ✅ | ⚠️ | Partial | polling+pairing, no webhooks/sharding |
-| Browser relay endpoints | ✅ | ⚠️ | Partial (Stage 28 runtime realism uplift) | Stage26+27 added OpenClaw-style `act` envelope at API/CLI/gateway levels (`/api/browser/act`, `browser act --json`, `gateway call browser.act`), with broad `openclaw_cli` dispatch. Stage28 adds constrained native `act.evaluate` runtime (sync-only `location/document/element` model with persisted state mutation bridging) while keeping strict capability-gated errors for unsupported paths (`drag/select`, async evaluate) |
+| Browser relay endpoints | ✅ | ⚠️ | Partial (Stage 30 native wait fidelity uplift) | Stage26+27 added OpenClaw-style `act` envelope at API/CLI/gateway levels (`/api/browser/act`, `browser act --json`, `gateway call browser.act`), with broad `openclaw_cli` dispatch. Stage28 added constrained native `act.evaluate`; Stage30 upgrades native `act.wait` from no-op to real wait lifecycle (`timeMs`, `text`, `textGone`, timeout polling) and explicit structured capability-gated errors for unsupported wait contracts (`selector/url/loadState/fn`) |
 | Browser admin dashboard | ✅ | ⚠️ | Partial (Stage 19 slice 2 polished) | `/admin` operator console UX (KPIs, refresh controls, denser sessions/cron visibility), enriched `/api/admin/overview`, safe cron quick-actions (`run due`/enable/disable), logs/audit tail |
 | Realtime events | ✅ | ✅ | Closed | SSE + EventBus |
 | Async task/job lane | ✅ | ⚠️ | Partial | internal queue, single worker |
