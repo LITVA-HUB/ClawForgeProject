@@ -27,8 +27,8 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `pairing` | list/approve/... | partial | `list`, `approve` |
 | `gateway` | status/start/stop/restart/call/probe/discover/... | partial | Stage 23 slice 1: `gateway`/`gateway run` alias to foreground run, added `probe`, `gateway call logs.tail`, and structured not_implemented for discover/install/uninstall |
 | `message` | send/... | partial | Stage 16 baseline: telegram `send|react|delete|poll` with strict target validation + dry-run |
-| `agent` | manage/ops | partial | Stage 32 orchestration uplift alias to `agents` family (`list/show/create/update/delete/use/run/runs/run-status`) + per-agent context/tool policy metadata + structured stubs for unavailable subpaths |
-| `agents` | manage/ops | partial | Stage 32 advanced orchestration (`list/show/create/update/delete/use/run/runs/run-status`) with file-backed registry, subagent + context/tool policy fields, deterministic run lifecycle history, and structured fallback orchestration |
+| `agent` | manage/ops | partial | Stage 33 orchestration+enforcement alias to `agents` family (`list/show/create/update/delete/use/run/runs/run-status`) + runtime context/tool policy enforcement on task path + structured stubs for unavailable subpaths |
+| `agents` | manage/ops | partial | Stage 33 advanced orchestration (`list/show/create/update/delete/use/run/runs/run-status`) with file-backed registry, subagent/context/tool policy fields, deterministic run lifecycle history, and runtime task-path enforcement (`context` carryover/history + `/tool` allow/deny checks) |
 | `acp` | protocol tooling | impossible-now | requires ACP ecosystem parity |
 | `approvals` | approvals workflow | stub | not mapped yet |
 | `channels` | channel providers mgmt | partial | telegram baseline: list/status/capabilities/resolve/add/remove |
@@ -140,6 +140,8 @@ Deterministic run metadata history:
 - run records persisted to `stateDir/agents/runs.jsonl`
 - `agents update` now stores additive per-agent context/tool policy metadata (`context.historyLimit`, `context.carryover`, `tools.allow`, `tools.deny`) with normalization and backward compatibility
 - `agents run` carries context/tool policy into `run.options` and gateway task payload when available; local fallback returns structured `advanced_options_require_gateway`
+- Stage33: gateway task path now enforces runtime `context` policy (history/carryover pruning) and `tools` policy (`deny` precedence + allowlist behavior) for `/tool` command execution
+- Stage33: `/api/tasks` validates policy payloads with explicit JSON errors (`invalid_context_*`, `invalid_tools_policy`, `invalid_tool_allow`, `invalid_tool_deny`)
 - records now include run lifecycle metadata (`createdAtMs`, `startedAtMs`, optional `endedAtMs`, `state`, `terminal`)
 - `agents runs`/`agents history` list per-agent run outcomes with optional status/active filtering
 - `agents run-status` resolves a run record deterministically by `runId`

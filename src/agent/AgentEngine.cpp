@@ -9,6 +9,117 @@
 
 namespace clawforge::agent {
 
+namespace {
+using json = nlohmann::json;
+
+json normalizeRuntimePolicy(const json& raw) {
+  json out = json::object();
+  if (!raw.is_object()) return out;
+
+  if (raw.contains("context") && raw["context"].is_object()) {
+    json ctx = json::object();
+    if (raw["context"].contains("historyLimit") && raw["context"]["historyLimit"].is_number_integer()) {
+      ctx["historyLimit"] = std::clamp(raw["context"]["historyLimit"].get<int>(), 1, 200);
+    }
+    if (raw["context"].contains("carryover") && raw["context"]["carryover"].is_string()) {
+      const auto mode = raw["context"]["carryover"].get<std::string>();
+      if (mode == "inherit" || mode == "minimal" || mode == "none") ctx["carryover"] = mode;
+    }
+    if (!ctx.empty()) out["context"] = std::move(ctx);
+  }
+
+  if (raw.contains("tools") && raw["tools"].is_object()) {
+    json tp = json::object();
+    const auto parseList = [](const json& value) {
+      std::vector<std::string> values;
+      if (!value.is_array()) return values;
+      for (const auto& item : value) {
+        if (!item.is_string()) continue;
+        const auto name = item.get<std::string>();
+        if (name.empty()) continue;
+        if (std::find(values.begin(), values.end(), name) == values.end()) values.push_back(name);
+      }
+      return values;
+    };
+    const auto allow = parseList(raw["tools"].value("allow", json::array()));
+    const auto deny = parseList(raw["tools"].value("deny", json::array()));
+    if (!allow.empty()) tp["allow"] = allow;
+    if (!deny.empty()) tp["deny"] = deny;
+    if (!tp.empty()) out["tools"] = std::move(tp);
+  }
+
+  return out;
+}
+
+bool runtimeToolAllowed(const json& runtimePolicy, const std::string& toolName, std::string* reason) {
+  if (!runtimePolicy.is_object() || !runtimePolicy.contains("tools") || !runtimePolicy["tools"].is_object()) return true;
+  const auto& tools = runtimePolicy["tools"];
+
+  auto hasInList = [&](const char* field, const std::string& value) {
+    if (!tools.contains(field) || !tools[field].is_array()) return false;
+    for (const auto& item : tools[field]) {
+      if (!item.is_string()) continue;
+      const auto name = item.get<std::string>();
+      if (name == value || name == "*") return true;
+    }
+    return false;
+  };
+
+  if (hasInList("deny", toolName)) {
+    if (reason) *reason = "denied by run.options.tools.deny";
+    return false;
+  }
+
+  if (tools.contains("allow") && tools["allow"].is_array() && !hasInList("allow", toolName)) {
+    if (reason) *reason = "not included by run.options.tools.allow";
+    return false;
+  }
+  return true;
+}
+
+std::vector<llm::ChatMessage> applyCarryoverPolicy(const std::vector<session::SessionMessage>& history,
+                                                   const std::string& carryover,
+                                                   int historyLimit) {
+  std::vector<llm::ChatMessage> prompt;
+  if (carryover == "none") {
+    for (auto it = history.rbegin(); it != history.rend(); ++it) {
+      if (it->role == "system" || it->role == "user" || it->role == "assistant") {
+        prompt.push_back({it->role, it->content});
+        break;
+      }
+    }
+    std::reverse(prompt.begin(), prompt.end());
+    return prompt;
+  }
+
+  if (carryover == "minimal") {
+    int keptNonSystem = 0;
+    int keptSystem = 0;
+    for (auto it = history.rbegin(); it != history.rend() && static_cast<int>(prompt.size()) < historyLimit; ++it) {
+      if (it->role != "system" && it->role != "user" && it->role != "assistant") continue;
+      if (it->role == "system") {
+        if (keptSystem >= 1) continue;
+        ++keptSystem;
+      } else {
+        if (keptNonSystem >= 3) continue;
+        ++keptNonSystem;
+      }
+      prompt.push_back({it->role, it->content});
+    }
+    std::reverse(prompt.begin(), prompt.end());
+    return prompt;
+  }
+
+  for (const auto& m : history) {
+    if (m.role == "system" || m.role == "user" || m.role == "assistant") {
+      prompt.push_back({m.role, m.content});
+    }
+  }
+  return prompt;
+}
+
+}  // namespace
+
 AgentEngine::AgentEngine(session::SessionStore& sessions, tools::ToolRegistry& tools,
                          llm::LlmClient& llm, core::ModelConfig modelConfig,
                          core::ApiConfig apiConfig, core::EventBus& eventBus,
@@ -80,15 +191,16 @@ tools::ToolCallContext AgentEngine::contextFromSessionKey(const std::string& ses
 }
 
 std::string AgentEngine::routeInboundMessage(const std::string& channel, const std::string& peerId,
-                                             const std::string& text, bool systemEvent) {
+                                             const std::string& text, bool systemEvent,
+                                             const nlohmann::json& runtimePolicy) {
   const std::string sessionKey = deriveSessionKey(channel, peerId);
   eventBus_.publish("inbound_message",
                     {{"channel", channel}, {"peerId", peerId}, {"sessionKey", sessionKey}, {"text", text}});
-  return handleMessage(sessionKey, text, systemEvent);
+  return handleMessage(sessionKey, text, systemEvent, runtimePolicy);
 }
 
 std::string AgentEngine::handleMessage(const std::string& sessionKey, const std::string& text,
-                                       bool systemEvent) {
+                                       bool systemEvent, const nlohmann::json& runtimePolicy) {
   if (sessionKey.empty()) {
     return "sessionKey is required";
   }
@@ -105,8 +217,10 @@ std::string AgentEngine::handleMessage(const std::string& sessionKey, const std:
   sessions_.ensureSession(sessionKey);
   sessions_.appendMessage(sessionKey, systemEvent ? "system" : "user", text);
 
+  const auto effectivePolicy = normalizeRuntimePolicy(runtimePolicy);
+
   if (!systemEvent && !text.empty() && text[0] == '/') {
-    const auto commandReply = handleCommand(sessionKey, text);
+    const auto commandReply = handleCommand(sessionKey, text, effectivePolicy);
     sessions_.appendMessage(sessionKey, "assistant", commandReply);
     eventBus_.publish("assistant_reply", {{"sessionKey", sessionKey}, {"reply", commandReply}, {"source", "command"}});
     return commandReply;
@@ -115,12 +229,16 @@ std::string AgentEngine::handleMessage(const std::string& sessionKey, const std:
   std::vector<llm::ChatMessage> prompt;
   prompt.push_back({"system", modelConfig_.systemPrompt});
 
-  const auto history = sessions_.loadMessages(sessionKey, 30);
-  for (const auto& m : history) {
-    if (m.role == "system" || m.role == "user" || m.role == "assistant") {
-      prompt.push_back({m.role, m.content});
-    }
-  }
+  const int historyLimit = effectivePolicy.contains("context")
+                               ? effectivePolicy["context"].value("historyLimit", 30)
+                               : 30;
+  const std::string carryover = effectivePolicy.contains("context")
+                                    ? effectivePolicy["context"].value("carryover", "inherit")
+                                    : "inherit";
+
+  const auto history = sessions_.loadMessages(sessionKey, std::max(1, historyLimit));
+  const auto pruned = applyCarryoverPolicy(history, carryover, std::max(1, historyLimit));
+  prompt.insert(prompt.end(), pruned.begin(), pruned.end());
 
   try {
     const std::string reply = llm_.complete(prompt);
@@ -133,7 +251,8 @@ std::string AgentEngine::handleMessage(const std::string& sessionKey, const std:
   }
 }
 
-std::string AgentEngine::handleCommand(const std::string& sessionKey, const std::string& text) {
+std::string AgentEngine::handleCommand(const std::string& sessionKey, const std::string& text,
+                                       const nlohmann::json& runtimePolicy) {
   if (text == "/status") {
     const auto sessions = sessions_.listSessions();
     return "NexaClaw OK. Sessions: " + std::to_string(sessions.size());
@@ -156,6 +275,17 @@ std::string AgentEngine::handleCommand(const std::string& sessionKey, const std:
       if (args.is_discarded()) {
         return "Invalid JSON args for /tool";
       }
+    }
+
+    std::string denyReason;
+    if (!runtimeToolAllowed(runtimePolicy, toolName, &denyReason)) {
+      const auto denied = nlohmann::json{{"ok", false},
+                                         {"error", "tool_denied_by_runtime_policy"},
+                                         {"tool", toolName},
+                                         {"policyReason", denyReason},
+                                         {"runtimePolicy", runtimePolicy.contains("tools") ? runtimePolicy["tools"] : nlohmann::json::object()}};
+      eventBus_.publish("tool_call_result", {{"tool", toolName}, {"ok", false}, {"result", denied}});
+      return denied.dump(2);
     }
 
     const auto context = contextFromSessionKey(sessionKey);

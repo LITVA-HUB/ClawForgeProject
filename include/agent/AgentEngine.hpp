@@ -6,6 +6,8 @@
 #include <string>
 #include <unordered_map>
 
+#include <nlohmann/json.hpp>
+
 #include "core/Config.hpp"
 #include "core/EventBus.hpp"
 #include "llm/LlmClient.hpp"
@@ -21,9 +23,11 @@ class AgentEngine {
               int messageQueueTimeoutMs = 15000);
 
   std::string handleMessage(const std::string& sessionKey, const std::string& text,
-                            bool systemEvent = false);
+                            bool systemEvent = false,
+                            const nlohmann::json& runtimePolicy = nlohmann::json::object());
   std::string routeInboundMessage(const std::string& channel, const std::string& peerId,
-                                  const std::string& text, bool systemEvent = false);
+                                  const std::string& text, bool systemEvent = false,
+                                  const nlohmann::json& runtimePolicy = nlohmann::json::object());
   std::string deriveSessionKey(const std::string& channel, const std::string& peerId) const;
 
  private:
@@ -39,7 +43,8 @@ class AgentEngine {
   std::unordered_map<std::string, std::shared_ptr<std::timed_mutex>> sessionMutexes_;
 
   std::shared_ptr<std::timed_mutex> sessionMutex(const std::string& sessionKey);
-  std::string handleCommand(const std::string& sessionKey, const std::string& text);
+  std::string handleCommand(const std::string& sessionKey, const std::string& text,
+                            const nlohmann::json& runtimePolicy);
   tools::ToolCallContext contextFromSessionKey(const std::string& sessionKey) const;
 };
 

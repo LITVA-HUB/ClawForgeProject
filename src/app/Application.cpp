@@ -51,8 +51,11 @@ int Application::run() {
       orchestration::TaskConfig{config_.taskLane.enabled, config_.taskLane.maxQueue,
                                 config_.taskLane.defaultTimeoutMs},
       eventBus_, [this](const orchestration::TaskRecord& task) {
-        const std::string sessionKey = agent_->deriveSessionKey(task.channel, task.peerId);
-        return agent_->routeInboundMessage(task.channel, task.peerId, task.text, task.systemEvent);
+        nlohmann::json runtimePolicy = nlohmann::json::object();
+        if (!task.contextPolicy.empty()) runtimePolicy["context"] = task.contextPolicy;
+        if (!task.toolsPolicy.empty()) runtimePolicy["tools"] = task.toolsPolicy;
+        return agent_->routeInboundMessage(task.channel, task.peerId, task.text, task.systemEvent,
+                                           runtimePolicy);
       });
   if (!tasks_->init()) {
     core::Logger::error("Cannot initialize task queue");

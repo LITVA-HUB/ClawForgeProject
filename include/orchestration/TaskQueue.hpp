@@ -32,6 +32,8 @@ struct TaskRecord {
   std::string text;
   bool systemEvent{false};
   int timeoutMs{30000};
+  nlohmann::json contextPolicy{nlohmann::json::object()};
+  nlohmann::json toolsPolicy{nlohmann::json::object()};
   std::string result;
   std::string error;
   int64_t createdAtMs{0};

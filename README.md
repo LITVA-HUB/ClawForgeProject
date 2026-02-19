@@ -258,6 +258,7 @@ scripts/smoke_stage29_agents_orchestration.sh
 scripts/smoke_stage30_browser_wait_native.sh
 scripts/smoke_stage31_agents_advanced.sh
 scripts/smoke_stage32_agents_context_tools.sh
+scripts/smoke_stage33_agents_policy_enforcement.sh
 scripts/smoke_stage23_control_plane_slice1.sh
 scripts/smoke_stage25_nodes_runtime_slice2.sh
 
@@ -299,7 +300,7 @@ Key blocks:
 ## Known limits (honest)
 
 - Browser parity now has a native NexaClaw baseline backend (`browser.backend=native`) for core command/API flow, including modeled GET form-submit side effects with structured capability gates; `browser.backend=openclaw_cli` remains available for real browser relay compatibility
-- `agent/agents` CLI now has Stage32 advanced orchestration baseline (`list/show/create/update/delete/use/run/runs/run-status` + richer metadata/subagent/context/tool policy controls + run lifecycle history), but still not full OpenClaw runtime subagent control parity
+- `agent/agents` CLI now has Stage33 runtime enforcement uplift: Stage32 metadata/forwarding plus live task-path enforcement for context carryover/history trimming and per-run tool allow/deny checks (`/api/tasks` + `/tool` command path); deep subagent orchestration parity is still partial
 - Telegram is baseline, not full multi-channel ecosystem
 - Canvas/Nodes/Devices have Stage 25 slice 2 practical runtime uplift: local read-safe runtime probe/invoke surface, virtual canvas snapshot, explicit capability-gated errors when runtime is unavailable
 - No full external subagent runtime orchestration

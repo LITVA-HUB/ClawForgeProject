@@ -10,6 +10,76 @@ namespace clawforge::orchestration {
 
 using json = nlohmann::json;
 
+namespace {
+
+std::optional<json> normalizeContextPolicy(const json& input, std::string* errorCode) {
+  if (input.is_null()) return json::object();
+  if (!input.is_object()) {
+    if (errorCode) *errorCode = "invalid_context_policy";
+    return std::nullopt;
+  }
+  json out = json::object();
+  if (input.contains("historyLimit")) {
+    if (!input["historyLimit"].is_number_integer()) {
+      if (errorCode) *errorCode = "invalid_context_history_limit";
+      return std::nullopt;
+    }
+    out["historyLimit"] = std::clamp(input["historyLimit"].get<int>(), 1, 200);
+  }
+  if (input.contains("carryover")) {
+    if (!input["carryover"].is_string()) {
+      if (errorCode) *errorCode = "invalid_context_carryover";
+      return std::nullopt;
+    }
+    const auto mode = input["carryover"].get<std::string>();
+    if (mode != "inherit" && mode != "minimal" && mode != "none") {
+      if (errorCode) *errorCode = "invalid_context_carryover";
+      return std::nullopt;
+    }
+    out["carryover"] = mode;
+  }
+  return out;
+}
+
+std::optional<json> normalizeToolsPolicy(const json& input, std::string* errorCode) {
+  if (input.is_null()) return json::object();
+  if (!input.is_object()) {
+    if (errorCode) *errorCode = "invalid_tools_policy";
+    return std::nullopt;
+  }
+
+  const auto parseList = [&](const char* field, const char* err) -> std::optional<std::vector<std::string>> {
+    if (!input.contains(field)) return std::vector<std::string>{};
+    if (!input[field].is_array()) {
+      if (errorCode) *errorCode = err;
+      return std::nullopt;
+    }
+    std::vector<std::string> out;
+    for (const auto& item : input[field]) {
+      if (!item.is_string() || item.get<std::string>().empty()) continue;
+      const auto name = item.get<std::string>();
+      if (std::find(out.begin(), out.end(), name) == out.end()) out.push_back(name);
+    }
+    if (input[field].size() > 0 && out.empty()) {
+      if (errorCode) *errorCode = err;
+      return std::nullopt;
+    }
+    return out;
+  };
+
+  const auto allow = parseList("allow", "invalid_tool_allow");
+  if (!allow.has_value()) return std::nullopt;
+  const auto deny = parseList("deny", "invalid_tool_deny");
+  if (!deny.has_value()) return std::nullopt;
+
+  json out = json::object();
+  if (!allow->empty()) out["allow"] = *allow;
+  if (!deny->empty()) out["deny"] = *deny;
+  return out;
+}
+
+}  // namespace
+
 TaskQueue::TaskQueue(std::filesystem::path stateDir, TaskConfig config, core::EventBus& eventBus,
                      ExecuteFn execFn)
     : storePath_(std::move(stateDir) / "tasks" / "tasks.json"),
@@ -40,18 +110,21 @@ std::string TaskQueue::genTaskId() {
 }
 
 json TaskQueue::toJson(const TaskRecord& t) {
-  return {{"id", t.id},
-          {"status", t.status},
-          {"channel", t.channel},
-          {"peerId", t.peerId},
-          {"text", t.text},
-          {"systemEvent", t.systemEvent},
-          {"timeoutMs", t.timeoutMs},
-          {"result", t.result},
-          {"error", t.error},
-          {"createdAtMs", t.createdAtMs},
-          {"startedAtMs", t.startedAtMs},
-          {"finishedAtMs", t.finishedAtMs}};
+  json out = {{"id", t.id},
+              {"status", t.status},
+              {"channel", t.channel},
+              {"peerId", t.peerId},
+              {"text", t.text},
+              {"systemEvent", t.systemEvent},
+              {"timeoutMs", t.timeoutMs},
+              {"result", t.result},
+              {"error", t.error},
+              {"createdAtMs", t.createdAtMs},
+              {"startedAtMs", t.startedAtMs},
+              {"finishedAtMs", t.finishedAtMs}};
+  if (!t.contextPolicy.empty()) out["context"] = t.contextPolicy;
+  if (!t.toolsPolicy.empty()) out["tools"] = t.toolsPolicy;
+  return out;
 }
 
 bool TaskQueue::saveLocked() const {
@@ -80,6 +153,8 @@ bool TaskQueue::loadLocked() {
     t.text = row.value("text", "");
     t.systemEvent = row.value("systemEvent", false);
     t.timeoutMs = row.value("timeoutMs", config_.defaultTimeoutMs);
+    t.contextPolicy = row.contains("context") && row["context"].is_object() ? row["context"] : json::object();
+    t.toolsPolicy = row.contains("tools") && row["tools"].is_object() ? row["tools"] : json::object();
     t.result = row.value("result", "");
     t.error = row.value("error", "");
     t.createdAtMs = row.value("createdAtMs", util::TimeUtil::nowMillis());
@@ -116,6 +191,18 @@ json TaskQueue::enqueue(const json& body) {
   t.systemEvent = body.value("systemEvent", false);
   t.timeoutMs = std::max(1000, body.value("timeoutMs", config_.defaultTimeoutMs));
   t.createdAtMs = util::TimeUtil::nowMillis();
+
+  std::string policyError;
+  if (body.contains("context")) {
+    const auto contextPolicy = normalizeContextPolicy(body["context"], &policyError);
+    if (!contextPolicy.has_value()) return {{"ok", false}, {"error", policyError}};
+    t.contextPolicy = *contextPolicy;
+  }
+  if (body.contains("tools")) {
+    const auto toolsPolicy = normalizeToolsPolicy(body["tools"], &policyError);
+    if (!toolsPolicy.has_value()) return {{"ok", false}, {"error", policyError}};
+    t.toolsPolicy = *toolsPolicy;
+  }
 
   if (t.text.empty()) return {{"ok", false}, {"error", "text is required"}};
 
