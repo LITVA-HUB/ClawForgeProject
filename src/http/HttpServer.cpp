@@ -446,12 +446,40 @@ $('toggleAuto').onclick=()=>{paused=!paused;$('toggleAuto').textContent=paused?'
     audit_.write("task_enqueue", {{"ok", result.value("ok", false)}});
     replyJson(res, result, result.value("ok", false) ? 200 : 400);
   });
-  server_.Get(R"(/api/tasks/(.+))", [&](const httplib::Request& req, httplib::Response& res) {
+  server_.Get(R"(/api/tasks/([^/]+)/events)", [&](const httplib::Request& req, httplib::Response& res) {
+    if (req.matches.size() < 2) return replyJson(res, {{"ok", false}, {"error", "task id missing"}}, 400);
+
+    int limit = 50;
+    if (req.has_param("limit")) {
+      try {
+        limit = std::stoi(req.get_param_value("limit"));
+      } catch (...) {
+        return replyJson(res, {{"ok", false}, {"error", "invalid_events_limit"}}, 400);
+      }
+      if (limit < 1 || limit > 500) {
+        return replyJson(res, {{"ok", false}, {"error", "invalid_events_limit"}, {"min", 1}, {"max", 500}}, 400);
+      }
+    }
+
+    int64_t afterSeq = 0;
+    if (req.has_param("afterSeq")) {
+      try {
+        afterSeq = std::stoll(req.get_param_value("afterSeq"));
+      } catch (...) {
+        return replyJson(res, {{"ok", false}, {"error", "invalid_events_after_seq"}}, 400);
+      }
+      if (afterSeq < 0) return replyJson(res, {{"ok", false}, {"error", "invalid_events_after_seq"}}, 400);
+    }
+
+    auto result = tasks_.events(req.matches[1].str(), limit, afterSeq);
+    replyJson(res, result, result.value("ok", false) ? 200 : 404);
+  });
+  server_.Get(R"(/api/tasks/([^/]+))", [&](const httplib::Request& req, httplib::Response& res) {
     if (req.matches.size() < 2) return replyJson(res, {{"ok", false}, {"error", "task id missing"}}, 400);
     auto result = tasks_.get(req.matches[1].str());
     replyJson(res, result, result.value("ok", false) ? 200 : 404);
   });
-  server_.Post(R"(/api/tasks/(.+)/cancel)", [&](const httplib::Request& req, httplib::Response& res) {
+  server_.Post(R"(/api/tasks/([^/]+)/cancel)", [&](const httplib::Request& req, httplib::Response& res) {
     if (req.matches.size() < 2) return replyJson(res, {{"ok", false}, {"error", "task id missing"}}, 400);
     auto result = tasks_.cancel(req.matches[1].str());
     audit_.write("task_cancel", {{"id", req.matches[1].str()}, {"ok", result.value("ok", false)}});

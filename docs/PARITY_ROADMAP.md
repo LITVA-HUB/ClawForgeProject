@@ -1,6 +1,6 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 31 advanced agent orchestration slice.
+> Updated after Stage 34 agents runtime control slice 3.
 
 ## Practical parity matrix
 
@@ -16,7 +16,7 @@
 | Security audit (`security audit [--deep] [--fix]`) | ✅ | ⚠️ | Partial (Stage 23 slice 1) | dmScope/auth/perms checks + token-strength + audit-log perms + safe fixes |
 | Message command/action surface | ✅ | ⚠️ | Partial (Stage 16 baseline) | telegram `send/react/delete/poll` + strict target validation + dry-run |
 | Channels command family | ✅ | ⚠️ | Partial (Stage 15 baseline) | `channels list/status/capabilities/resolve/add/remove` (telegram baseline) |
-| Agent/agents command family | ✅ | ⚠️ | Partial (Stage 33 enforcement-depth slice 2) | `list/show/create/update/delete/use/run/runs/run-status`; richer agent metadata/subagent policy controls; deterministic run lifecycle metadata history (`stateDir/agents/runs.jsonl`); runtime task-path enforcement for context/tool policy with explicit JSON errors; deeper OpenClaw subagent parity still pending |
+| Agent/agents command family | ✅ | ⚠️ | Partial (Stage 34 runtime control slice 3) | `list/show/create/update/delete/use/run/runs/run-status`; richer agent metadata/subagent policy controls; deterministic run lifecycle metadata history (`stateDir/agents/runs.jsonl`); runtime task-path context/tool enforcement (Stage33) + task-lane lifecycle events endpoint (`/api/tasks/{id}/events`) and `cancelling` transition (Stage34); deeper OpenClaw subagent parity still pending |
 | Multi-model providers + aliases + fallbacks | ✅ | ✅ | Closed (baseline) | openai/anthropic/openrouter/gemini/minimax |
 | Models auth parity beyond API keys | ✅ | ⚠️ | Partial (Stage 17 slice 2) | Native device-code start/login/poll baseline for `openai-codex` + legacy OpenClaw import bridge fallback |
 | OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + explicit stubs for not-yet branches |

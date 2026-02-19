@@ -109,6 +109,28 @@ std::string TaskQueue::genTaskId() {
   return "task-" + std::to_string(util::TimeUtil::nowMillis());
 }
 
+json TaskQueue::eventToJson(const TaskEvent& ev) {
+  json out = {{"seq", ev.seq}, {"type", ev.type}, {"status", ev.status}, {"atMs", ev.atMs}};
+  if (!ev.details.empty()) out["details"] = ev.details;
+  return out;
+}
+
+void TaskQueue::appendEvent(TaskRecord& t, const std::string& type, const std::string& status,
+                            const nlohmann::json& details) {
+  TaskEvent ev;
+  ev.seq = std::max<int64_t>(1, t.nextEventSeq);
+  t.nextEventSeq = ev.seq + 1;
+  ev.type = type;
+  ev.status = status;
+  ev.atMs = util::TimeUtil::nowMillis();
+  ev.details = details.is_object() ? details : json::object();
+  t.events.push_back(std::move(ev));
+  constexpr size_t kMaxEventsPerTask = 256;
+  if (t.events.size() > kMaxEventsPerTask) {
+    t.events.erase(t.events.begin(), t.events.begin() + static_cast<long>(t.events.size() - kMaxEventsPerTask));
+  }
+}
+
 json TaskQueue::toJson(const TaskRecord& t) {
   json out = {{"id", t.id},
               {"status", t.status},
@@ -121,7 +143,9 @@ json TaskQueue::toJson(const TaskRecord& t) {
               {"error", t.error},
               {"createdAtMs", t.createdAtMs},
               {"startedAtMs", t.startedAtMs},
-              {"finishedAtMs", t.finishedAtMs}};
+              {"finishedAtMs", t.finishedAtMs},
+              {"eventsCount", t.events.size()},
+              {"lastEventSeq", t.events.empty() ? 0 : t.events.back().seq}};
   if (!t.contextPolicy.empty()) out["context"] = t.contextPolicy;
   if (!t.toolsPolicy.empty()) out["tools"] = t.toolsPolicy;
   return out;
@@ -130,6 +154,14 @@ json TaskQueue::toJson(const TaskRecord& t) {
 bool TaskQueue::saveLocked() const {
   json arr = json::array();
   for (const auto& [_, task] : tasks_) arr.push_back(toJson(task));
+  for (auto& row : arr) {
+    const auto it = tasks_.find(row.value("id", ""));
+    if (it == tasks_.end()) continue;
+    json events = json::array();
+    for (const auto& ev : it->second.events) events.push_back(eventToJson(ev));
+    row["events"] = events;
+    row["nextEventSeq"] = it->second.nextEventSeq;
+  }
   return util::FileUtil::writeText(storePath_, json({{"tasks", arr}}).dump(2));
 }
 
@@ -161,12 +193,31 @@ bool TaskQueue::loadLocked() {
     t.startedAtMs = row.value("startedAtMs", 0LL);
     t.finishedAtMs = row.value("finishedAtMs", 0LL);
 
+    if (row.contains("events") && row["events"].is_array()) {
+      for (const auto& ev : row["events"]) {
+        if (!ev.is_object()) continue;
+        TaskEvent te;
+        te.seq = ev.value("seq", 0LL);
+        te.type = ev.value("type", "");
+        te.status = ev.value("status", "");
+        te.atMs = ev.value("atMs", 0LL);
+        te.details = ev.contains("details") && ev["details"].is_object() ? ev["details"] : json::object();
+        if (te.seq > 0 && !te.type.empty()) t.events.push_back(std::move(te));
+      }
+    }
+    t.nextEventSeq = row.value("nextEventSeq", 1LL);
+    if (!t.events.empty()) {
+      const int64_t maxSeen = t.events.back().seq;
+      t.nextEventSeq = std::max(t.nextEventSeq, maxSeen + 1);
+    }
+
     if (t.status == "queued") {
       queue_.push_back(t.id);
-    } else if (t.status == "running") {
+    } else if (t.status == "running" || t.status == "cancelling") {
       t.status = "cancelled";
       t.error = "Recovered after restart: previous run interrupted";
       t.finishedAtMs = util::TimeUtil::nowMillis();
+      appendEvent(t, "task_recovered", t.status, {{"reason", "interrupted_after_restart"}});
     }
     tasks_[t.id] = std::move(t);
   }
@@ -206,6 +257,9 @@ json TaskQueue::enqueue(const json& body) {
 
   if (t.text.empty()) return {{"ok", false}, {"error", "text is required"}};
 
+  appendEvent(t, "task_enqueued", t.status,
+              {{"channel", t.channel}, {"peerId", t.peerId}, {"timeoutMs", t.timeoutMs}});
+
   tasks_[t.id] = t;
   queue_.push_back(t.id);
   saveLocked();
@@ -225,8 +279,19 @@ json TaskQueue::cancel(const std::string& id) {
     task.finishedAtMs = util::TimeUtil::nowMillis();
     task.error = "Cancelled by user";
     queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
+    appendEvent(task, "task_cancelled", task.status, {{"phase", "queued"}});
   } else if (task.status == "running") {
+    task.status = "cancelling";
     cancelFlags_[id] = true;
+    appendEvent(task, "task_cancelling", task.status, {{"phase", "running"}});
+  } else if (task.status == "cancelling") {
+    appendEvent(task, "task_cancel_ignored", task.status, {{"reason", "already_cancelling"}});
+  } else {
+    return {{"ok", false},
+            {"error", "task_cancel_not_allowed"},
+            {"task", toJson(task)},
+            {"terminal", true},
+            {"allowedStatuses", json::array({"queued", "running", "cancelling"})}};
   }
   saveLocked();
   eventBus_.publish("task_cancel", {{"id", id}, {"status", task.status}});
@@ -238,6 +303,32 @@ json TaskQueue::get(const std::string& id) const {
   auto it = tasks_.find(id);
   if (it == tasks_.end()) return {{"ok", false}, {"error", "task not found"}};
   return {{"ok", true}, {"task", toJson(it->second)}};
+}
+
+json TaskQueue::events(const std::string& id, int limit, int64_t afterSeq) const {
+  std::lock_guard<std::mutex> lock(mu_);
+  auto it = tasks_.find(id);
+  if (it == tasks_.end()) return {{"ok", false}, {"error", "task not found"}};
+
+  const auto& events = it->second.events;
+  json arr = json::array();
+  for (const auto& ev : events) {
+    if (ev.seq <= afterSeq) continue;
+    arr.push_back(eventToJson(ev));
+  }
+
+  if (limit > 0 && static_cast<int>(arr.size()) > limit) {
+    arr.erase(arr.begin(), arr.end() - limit);
+  }
+
+  const int64_t nextAfterSeq = arr.empty() ? afterSeq : arr.back().value("seq", afterSeq);
+  return {{"ok", true},
+          {"taskId", id},
+          {"status", it->second.status},
+          {"events", arr},
+          {"afterSeq", afterSeq},
+          {"nextAfterSeq", nextAfterSeq},
+          {"lastEventSeq", events.empty() ? 0 : events.back().seq}};
 }
 
 json TaskQueue::list() const {
@@ -262,6 +353,8 @@ void TaskQueue::workerLoop() {
       if (it == tasks_.end()) continue;
       it->second.status = "running";
       it->second.startedAtMs = util::TimeUtil::nowMillis();
+      appendEvent(it->second, "task_started", it->second.status,
+                  {{"startedAtMs", it->second.startedAtMs}, {"timeoutMs", it->second.timeoutMs}});
       saveLocked();
     }
 
@@ -274,10 +367,11 @@ void TaskQueue::workerLoop() {
     std::string result;
     std::string status = "done";
     std::string error;
+    int64_t took = 0;
     try {
       const auto started = util::TimeUtil::nowMillis();
       result = execute_(copy);
-      const auto took = util::TimeUtil::nowMillis() - started;
+      took = util::TimeUtil::nowMillis() - started;
       if (took > copy.timeoutMs) {
         status = "timeout";
         error = "Task exceeded timeoutMs";
@@ -300,6 +394,8 @@ void TaskQueue::workerLoop() {
       it->second.result = result;
       it->second.error = error;
       it->second.finishedAtMs = util::TimeUtil::nowMillis();
+      appendEvent(it->second, "task_finished", it->second.status,
+                  {{"error", error}, {"durationMs", took}, {"finishedAtMs", it->second.finishedAtMs}});
       saveLocked();
     }
 

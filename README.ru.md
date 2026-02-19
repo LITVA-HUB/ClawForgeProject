@@ -21,7 +21,7 @@ NexaClaw — это локальный control plane: сессии, tools, cron,
 - Scoped policy для tools (`global` / `channels` / `peers`)
 - Telegram baseline + pairing policy/approve + baseline message actions (`send/react/delete/poll`)
 - Baseline управления каналами: `channels list|status|capabilities|resolve|add|remove` (telegram)
-- Task lane API (`/api/tasks`) с timeout/cancel baseline
+- Task lane API (`/api/tasks`) с timeout/cancel baseline + Stage34 run events introspection (`/api/tasks/{id}/events`) и промежуточным статусом `cancelling`
 - Security baseline: auth token mode, rate limit по источнику, audit JSONL
 - Browser relay Stage 18 baseline: native backend (`browser.backend=native`) для `status/open/navigate/snapshot/click/type/screenshot`, с fallback/compat через `openclaw_cli`
 - Admin dashboard Stage 19 slice 2: `/admin` как операторская консоль (KPI, refresh controls, сессии/cron, safe quick-actions, logs/audit tail)

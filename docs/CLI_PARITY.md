@@ -1,4 +1,4 @@
-# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 31 advanced agent orchestration slice)
+# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 34 runtime control slice)
 
 Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
@@ -27,8 +27,8 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `pairing` | list/approve/... | partial | `list`, `approve` |
 | `gateway` | status/start/stop/restart/call/probe/discover/... | partial | Stage 23 slice 1: `gateway`/`gateway run` alias to foreground run, added `probe`, `gateway call logs.tail`, and structured not_implemented for discover/install/uninstall |
 | `message` | send/... | partial | Stage 16 baseline: telegram `send|react|delete|poll` with strict target validation + dry-run |
-| `agent` | manage/ops | partial | Stage 33 orchestration+enforcement alias to `agents` family (`list/show/create/update/delete/use/run/runs/run-status`) + runtime context/tool policy enforcement on task path + structured stubs for unavailable subpaths |
-| `agents` | manage/ops | partial | Stage 33 advanced orchestration (`list/show/create/update/delete/use/run/runs/run-status`) with file-backed registry, subagent/context/tool policy fields, deterministic run lifecycle history, and runtime task-path enforcement (`context` carryover/history + `/tool` allow/deny checks) |
+| `agent` | manage/ops | partial | Stage 34 orchestration+runtime-control alias to `agents` family (`list/show/create/update/delete/use/run/runs/run-status`) + runtime context/tool policy enforcement + structured task run-events API (`/api/tasks/{id}/events`) + structured stubs for unavailable subpaths |
+| `agents` | manage/ops | partial | Stage 34 advanced orchestration (`list/show/create/update/delete/use/run/runs/run-status`) with file-backed registry, subagent/context/tool policy fields, deterministic run lifecycle history, runtime task-path enforcement (`context` carryover/history + `/tool` allow/deny checks), and richer task-lane transitions/events (`cancelling`, run events introspection) |
 | `acp` | protocol tooling | impossible-now | requires ACP ecosystem parity |
 | `approvals` | approvals workflow | stub | not mapped yet |
 | `channels` | channel providers mgmt | partial | telegram baseline: list/status/capabilities/resolve/add/remove |

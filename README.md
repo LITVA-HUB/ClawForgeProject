@@ -7,7 +7,7 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 - 🇷🇺 Russian README: [README.ru.md](./README.ru.md)
 - Parity matrix: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
 - CLI parity table: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
-- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE16](./docs/STAGE16.md) · [STAGE18](./docs/STAGE18.md) · [STAGE19](./docs/STAGE19.md) · [STAGE28](./docs/STAGE28.md) · [STAGE29](./docs/STAGE29.md) · [STAGE30](./docs/STAGE30.md) · [STAGE31](./docs/STAGE31.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
+- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE16](./docs/STAGE16.md) · [STAGE18](./docs/STAGE18.md) · [STAGE19](./docs/STAGE19.md) · [STAGE28](./docs/STAGE28.md) · [STAGE29](./docs/STAGE29.md) · [STAGE30](./docs/STAGE30.md) · [STAGE31](./docs/STAGE31.md) · [STAGE32](./docs/STAGE32.md) · [STAGE33](./docs/STAGE33.md) · [STAGE34](./docs/STAGE34.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
 
 ---
 
@@ -21,7 +21,7 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 - Scoped tools policy (`global` / `channels` / `peers`)
 - Telegram baseline + pairing policy/approvals + message actions (`send/react/delete/poll`) baseline
 - Channels management baseline: `channels list|status|capabilities|resolve|add|remove` (telegram)
-- Task lane API (`/api/tasks`) with timeout/cancel baseline
+- Task lane API (`/api/tasks`) with timeout/cancel baseline + Stage34 run events introspection (`/api/tasks/{id}/events`) and richer transition state (`cancelling`)
 - Security baseline: auth token mode, per-source rate limiting, audit JSONL
 - Browser relay Stage 18 baseline: native backend (`browser.backend=native`) for `status/open/navigate/snapshot/click/type/screenshot`, with `openclaw_cli` fallback/compat mode
 - Admin dashboard Stage 19 slice 2 operator console: `/admin` with KPI cards, refresh controls, session/cron visibility (state/next/last/errors), safe cron quick actions, event-log tail, and audit tail

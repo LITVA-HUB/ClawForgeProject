@@ -24,9 +24,17 @@ struct TaskConfig {
   int defaultTimeoutMs{30000};
 };
 
+struct TaskEvent {
+  int64_t seq{0};
+  std::string type;
+  std::string status;
+  int64_t atMs{0};
+  nlohmann::json details{nlohmann::json::object()};
+};
+
 struct TaskRecord {
   std::string id;
-  std::string status{"queued"};  // queued|running|done|failed|cancelled|timeout
+  std::string status{"queued"};  // queued|running|cancelling|done|failed|cancelled|timeout
   std::string channel{"api"};
   std::string peerId;
   std::string text;
@@ -34,6 +42,8 @@ struct TaskRecord {
   int timeoutMs{30000};
   nlohmann::json contextPolicy{nlohmann::json::object()};
   nlohmann::json toolsPolicy{nlohmann::json::object()};
+  std::vector<TaskEvent> events;
+  int64_t nextEventSeq{1};
   std::string result;
   std::string error;
   int64_t createdAtMs{0};
@@ -56,6 +66,7 @@ class TaskQueue {
   nlohmann::json cancel(const std::string& id);
   nlohmann::json get(const std::string& id) const;
   nlohmann::json list() const;
+  nlohmann::json events(const std::string& id, int limit, int64_t afterSeq) const;
 
  private:
   std::filesystem::path storePath_;
@@ -75,6 +86,9 @@ class TaskQueue {
   bool loadLocked();
   static std::string genTaskId();
   static nlohmann::json toJson(const TaskRecord& t);
+  static nlohmann::json eventToJson(const TaskEvent& ev);
+  static void appendEvent(TaskRecord& t, const std::string& type, const std::string& status,
+                          const nlohmann::json& details = nlohmann::json::object());
   void workerLoop();
 };
 
