@@ -1,6 +1,6 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 27 browser act kinds parity slice.
+> Updated after Stage 28 native browser runtime realism slice.
 
 ## Practical parity matrix
 
@@ -21,7 +21,7 @@
 | Models auth parity beyond API keys | ✅ | ⚠️ | Partial (Stage 17 slice 2) | Native device-code start/login/poll baseline for `openai-codex` + legacy OpenClaw import bridge fallback |
 | OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + explicit stubs for not-yet branches |
 | Telegram channel baseline | ✅ | ⚠️ | Partial | polling+pairing, no webhooks/sharding |
-| Browser relay endpoints | ✅ | ⚠️ | Partial (Stage 27 act kinds uplift) | Stage26+27 added OpenClaw-style `act` envelope at API/CLI/gateway levels (`/api/browser/act`, `browser act --json`, `gateway call browser.act`), expanded act-kind dispatch (`press/hover/scrollIntoView/drag/select/fill/resize/wait/evaluate/close`) for `openclaw_cli`, and a larger deterministic native subset (`click/type/press Enter/wait/close/hover/scrollIntoView/fill/resize`) with capability-gated structured errors for unsupported runtime kinds |
+| Browser relay endpoints | ✅ | ⚠️ | Partial (Stage 28 runtime realism uplift) | Stage26+27 added OpenClaw-style `act` envelope at API/CLI/gateway levels (`/api/browser/act`, `browser act --json`, `gateway call browser.act`), with broad `openclaw_cli` dispatch. Stage28 adds constrained native `act.evaluate` runtime (sync-only `location/document/element` model with persisted state mutation bridging) while keeping strict capability-gated errors for unsupported paths (`drag/select`, async evaluate) |
 | Browser admin dashboard | ✅ | ⚠️ | Partial (Stage 19 slice 2 polished) | `/admin` operator console UX (KPIs, refresh controls, denser sessions/cron visibility), enriched `/api/admin/overview`, safe cron quick-actions (`run due`/enable/disable), logs/audit tail |
 | Realtime events | ✅ | ✅ | Closed | SSE + EventBus |
 | Async task/job lane | ✅ | ⚠️ | Partial | internal queue, single worker |

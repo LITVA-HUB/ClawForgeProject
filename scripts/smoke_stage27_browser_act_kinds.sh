@@ -73,11 +73,21 @@ if "$BIN" browser act --json '{"kind":"press","key":"Escape"}' --target-id "$TID
 fi
 grep -q '"code": "native_capability_press_key_unsupported"' /tmp/nexaclaw-stage27-act-press-unsupported.json
 
-if "$BIN" browser act --json '{"kind":"evaluate","fn":"() => 1"}' --target-id "$TID" --config "$CFG" >/tmp/nexaclaw-stage27-act-evaluate-unsupported.json 2>&1; then
-  echo "[FAIL] native evaluate unexpectedly succeeded"
+ACT_EVAL=$($BIN browser act --json '{"kind":"evaluate","fn":"() => location.href"}' --target-id "$TID" --config "$CFG")
+echo "$ACT_EVAL" | grep -q '"ok": true'
+echo "$ACT_EVAL" | grep -q '"kind": "evaluate"'
+
+ACT_EVAL_NAV=$($BIN browser act --json '{"kind":"evaluate","fn":"() => { location.href = \"https://example.com/eval\"; return location.href; }"}' --target-id "$TID" --config "$CFG")
+echo "$ACT_EVAL_NAV" | grep -q '"ok": true'
+echo "$ACT_EVAL_NAV" | grep -q 'https://example.com/eval'
+SNAP3=$($BIN browser snapshot --target-id "$TID" --config "$CFG")
+echo "$SNAP3" | grep -q 'https://example.com/eval'
+
+if "$BIN" browser act --json '{"kind":"evaluate","fn":"async () => 1"}' --target-id "$TID" --config "$CFG" >/tmp/nexaclaw-stage27-act-evaluate-async-unsupported.json 2>&1; then
+  echo "[FAIL] native async evaluate unexpectedly succeeded"
   exit 1
 fi
-grep -q '"code": "native_capability_kind_unsupported"' /tmp/nexaclaw-stage27-act-evaluate-unsupported.json
+grep -q '"code": "native_capability_evaluate_async_unsupported"' /tmp/nexaclaw-stage27-act-evaluate-async-unsupported.json
 
 ACT_CLOSE=$($BIN browser act --json '{"kind":"close"}' --target-id "$TID" --config "$CFG")
 echo "$ACT_CLOSE" | grep -q '"ok": true'

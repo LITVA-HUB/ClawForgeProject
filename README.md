@@ -7,7 +7,7 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 - 🇷🇺 Russian README: [README.ru.md](./README.ru.md)
 - Parity matrix: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
 - CLI parity table: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
-- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE16](./docs/STAGE16.md) · [STAGE18](./docs/STAGE18.md) · [STAGE19](./docs/STAGE19.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
+- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE16](./docs/STAGE16.md) · [STAGE18](./docs/STAGE18.md) · [STAGE19](./docs/STAGE19.md) · [STAGE28](./docs/STAGE28.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
 
 ---
 
@@ -153,7 +153,7 @@ NexaClaw Stage 10 provides practical CLI parity for high-value OpenClaw flows.
 - `models list|status|set|aliases|fallbacks|probe|set-image`
 - `models auth list|add|login|paste-token|setup-token|use|remove` + `models auth order get|set|clear`
 - `image-fallbacks list|add|remove|clear`
-- `browser status|open|navigate|snapshot|click|type|screenshot|act` (Stage 26 slice: OpenClaw-style `act` envelope baseline + native safe subset)
+- `browser status|open|navigate|snapshot|click|type|screenshot|act` (Stage 26/27/28 slices: OpenClaw-style `act` envelope baseline + native safe subset with constrained `evaluate` realism)
 - `config get/set` (expanded key coverage)
 - `logs tail`, `system event`, `pairing list|approve`
 - `message send|react|delete|poll --channel telegram ...` (strict target validation + dry-run baseline)

@@ -152,6 +152,54 @@ bool nativeHttpFetchAvailable() {
   return hasCurl.exitCode == 0;
 }
 
+bool nativeNodeAvailable() {
+  const auto hasNode = util::Shell::run("command -v node");
+  return hasNode.exitCode == 0;
+}
+
+nlohmann::json runNativeEvaluateModel(const nlohmann::json& payload) {
+  static const std::string kScript = R"JS(const vm=require('vm');
+const input=JSON.parse(process.argv[1]||'{}');
+const element=input.element&&typeof input.element==='object'?input.element:null;
+const location={href:String(input.url||'')};
+const documentObj={title:String(input.title||'')};
+const sandbox={location,document:documentObj,element,globalThis:null,console:{log:()=>{}}};
+sandbox.globalThis=sandbox;
+const out=(obj)=>process.stdout.write(JSON.stringify(obj));
+try{
+  const src=String(input.fn||'').trim();
+  if(!src){ out({ok:false,code:'native_evaluate_fn_required',error:'fn is required'}); process.exit(2); }
+  let evaluated=vm.runInNewContext(src,sandbox,{timeout:75});
+  if(typeof evaluated==='function') evaluated=evaluated(element);
+  if(evaluated&&typeof evaluated.then==='function') {
+    out({ok:false,code:'native_evaluate_async_unsupported',error:'async evaluate is not supported in native backend'});
+    process.exit(2);
+  }
+  out({ok:true,result:evaluated,locationHref:location.href,documentTitle:documentObj.title,element});
+}catch(err){
+  out({ok:false,code:'native_evaluate_execution_failed',error:String((err&&err.message)||err)});
+  process.exit(2);
+})JS";
+
+  const std::string cmd = "node -e " + util::Shell::quote(kScript) + " " + util::Shell::quote(payload.dump());
+  const auto res = util::Shell::run(cmd);
+  auto parsed = nlohmann::json::parse(res.output, nullptr, false);
+  if (parsed.is_discarded() || !parsed.is_object()) {
+    return {{"ok", false},
+            {"code", "native_evaluate_runtime_invalid_output"},
+            {"error", "native evaluate runtime returned non-json output"},
+            {"runtimeOutput", trim(res.output)},
+            {"exitCode", res.exitCode}};
+  }
+  if (res.exitCode != 0 && parsed.value("ok", true)) {
+    parsed["ok"] = false;
+    parsed["code"] = "native_evaluate_runtime_failed";
+    parsed["error"] = "native evaluate runtime failed";
+    parsed["exitCode"] = res.exitCode;
+  }
+  return parsed;
+}
+
 }  // namespace
 
 BrowserRelay::BrowserRelay(core::BrowserConfig config) : config_(std::move(config)) {}
@@ -340,15 +388,17 @@ nlohmann::json BrowserRelay::nativeStatus() const {
           {"diagnosticMode", false},
           {"targets", nativeTargets_.size()},
           {"activeTargetId", nativeLastTargetId_},
-          {"capabilities", {"status", "open", "navigate", "snapshot", "click", "type", "screenshot", "act.click", "act.type", "act.press", "act.wait", "act.close", "act.hover", "act.scrollIntoView", "act.fill", "act.resize"}},
+          {"capabilities", {"status", "open", "navigate", "snapshot", "click", "type", "screenshot", "act.click", "act.type", "act.press", "act.wait", "act.close", "act.hover", "act.scrollIntoView", "act.fill", "act.resize", "act.evaluate"}},
           {"nativeRuntime",
            {{"httpFetch", nativeHttpFetchAvailable()},
+            {"evaluateRuntime", nativeNodeAvailable()},
             {"parsedUrlSchemes", {"data:text/html", "http", "https"}},
             {"structuredWarnings", true},
             {"capabilityGates",
              {{"formSubmit", true},
               {"formSubmitMethods", {"get"}},
-              {"unsupportedFormSubmitMethods", {"post", "dialog"}}}}}},
+              {"unsupportedFormSubmitMethods", {"post", "dialog"}},
+              {"evaluateAsync", false}}}}},
           {"limitations", {"Native backend is still not a full browser engine (no JS execution / CDP session control)."}}};
 }
 
@@ -1201,7 +1251,86 @@ nlohmann::json BrowserRelay::nativeAct(const nlohmann::json& request, const std:
     return {{"ok", true}, {"action", "act"}, {"kind", kind}, {"targetId", resolvedTargetId}, {"viewport", {{"width", w}, {"height", h}}}};
   }
 
-  if (kind == "drag" || kind == "select" || kind == "evaluate") {
+  if (kind == "evaluate") {
+    const std::string fn = request.value("fn", "");
+    if (fn.empty()) {
+      return {{"ok", false}, {"kind", kind}, {"code", "browser_act_evaluate_fn_required"}, {"error", "fn is required"}};
+    }
+    if (!nativeNodeAvailable()) {
+      return capabilityError("evaluate", "node runtime is required for native evaluate", "native_capability_evaluate_runtime_unavailable");
+    }
+
+    std::lock_guard<std::mutex> lock(nativeMu_);
+    nativeLoadStateLocked();
+    auto it = nativeTargets_.find(resolvedTargetId);
+    if (resolvedTargetId.empty() || it == nativeTargets_.end()) {
+      return {{"ok", false}, {"error", "targetId not found"}, {"code", "target_not_found"}, {"targetId", resolvedTargetId}, {"kind", kind}};
+    }
+
+    const std::string ref = request.value("ref", "");
+    nlohmann::json element = nlohmann::json::object();
+    if (!ref.empty()) {
+      const auto refIt = it->second.refs.find(ref);
+      if (refIt == it->second.refs.end()) {
+        return {{"ok", false}, {"error", "ref not found"}, {"code", "ref_not_found"}, {"ref", ref}, {"kind", kind}};
+      }
+      element = {{"ref", ref},
+                 {"role", refIt->second.role},
+                 {"name", refIt->second.name},
+                 {"textContent", refIt->second.text},
+                 {"value", it->second.typedValues.count(ref) ? it->second.typedValues[ref] : refIt->second.text}};
+    }
+
+    const auto evalOut = runNativeEvaluateModel({{"fn", fn}, {"url", it->second.url}, {"title", it->second.title}, {"element", element}});
+    if (!evalOut.value("ok", false)) {
+      auto out = evalOut;
+      out["action"] = "act";
+      out["kind"] = kind;
+      out["targetId"] = resolvedTargetId;
+      if (out.value("code", "") == "native_evaluate_async_unsupported") {
+        out["code"] = "native_capability_evaluate_async_unsupported";
+        out["capabilityGate"] = {{"feature", "evaluate.async"}, {"backend", "native"}};
+      }
+      return out;
+    }
+
+    bool mutated = false;
+    const std::string nextUrl = evalOut.value("locationHref", it->second.url);
+    if (!nextUrl.empty() && nextUrl != it->second.url) {
+      it->second.url = nextUrl;
+      applyNativeRuntimeContent(it->second);
+      mutated = true;
+    }
+    const std::string nextTitle = evalOut.value("documentTitle", it->second.title);
+    if (!nextTitle.empty() && nextTitle != it->second.title) {
+      it->second.title = nextTitle;
+      mutated = true;
+    }
+    if (!ref.empty() && evalOut.contains("element") && evalOut["element"].is_object()) {
+      const auto& el = evalOut["element"];
+      if (el.contains("value") && el["value"].is_string()) {
+        it->second.typedValues[ref] = el["value"].get<std::string>();
+        mutated = true;
+      }
+    }
+    if (mutated) rebuildRefs(it->second);
+    nativeLastTargetId_ = resolvedTargetId;
+    nativeSaveStateLocked();
+
+    nlohmann::json out{{"ok", true},
+                       {"action", "act"},
+                       {"kind", kind},
+                       {"targetId", resolvedTargetId},
+                       {"result", evalOut.contains("result") ? evalOut["result"] : nlohmann::json()},
+                       {"url", it->second.url},
+                       {"runtime", {{"source", it->second.runtime.source}}}};
+    if (it->second.runtime.warning.is_object() && !it->second.runtime.warning.empty()) {
+      out["runtime"]["warning"] = it->second.runtime.warning;
+    }
+    return out;
+  }
+
+  if (kind == "drag" || kind == "select") {
     return capabilityError(kind, "native backend does not implement this act kind", "native_capability_kind_unsupported");
   }
 
@@ -1209,7 +1338,7 @@ nlohmann::json BrowserRelay::nativeAct(const nlohmann::json& request, const std:
           {"action", "act"},
           {"kind", kind},
           {"error", "native_browser_act_kind_unsupported"},
-          {"supportedKinds", {"click", "type", "press", "wait", "close", "hover", "scrollIntoView", "fill", "resize"}},
+          {"supportedKinds", {"click", "type", "press", "wait", "close", "hover", "scrollIntoView", "fill", "resize", "evaluate"}},
           {"hint", "Use browser.backend=openclaw_cli for full Playwright-style act support"}};
 }
 
