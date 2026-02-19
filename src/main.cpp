@@ -368,10 +368,44 @@ int printNotImplJson(const std::string& top, const std::string& sub, const std::
   return 2;
 }
 
+std::filesystem::path agentsRunsPath(const clawforge::core::AppConfig& cfg) {
+  return cfg.stateDir / "agents" / "runs.jsonl";
+}
+
+void appendAgentRunRecord(const clawforge::core::AppConfig& cfg, const json& record) {
+  const auto path = agentsRunsPath(cfg);
+  std::error_code ec;
+  std::filesystem::create_directories(path.parent_path(), ec);
+  std::ofstream out(path, std::ios::app);
+  if (!out) return;
+  out << record.dump() << "\n";
+}
+
+std::vector<json> listAgentRunRecords(const clawforge::core::AppConfig& cfg, const std::string& agentId, int limit) {
+  std::vector<json> records;
+  const auto path = agentsRunsPath(cfg);
+  if (!std::filesystem::exists(path)) return records;
+  std::ifstream in(path);
+  if (!in) return records;
+  std::string line;
+  while (std::getline(in, line)) {
+    if (line.empty()) continue;
+    auto row = json::parse(line, nullptr, false);
+    if (row.is_discarded() || !row.is_object()) continue;
+    if (!agentId.empty() && row.value("agentId", "") != agentId) continue;
+    records.push_back(row);
+  }
+  if (limit <= 0) limit = 1;
+  if (static_cast<int>(records.size()) > limit) {
+    records.erase(records.begin(), records.end() - limit);
+  }
+  return records;
+}
+
 int runAgentsFamily(const std::string& configPath, const std::vector<std::string>& pos, const std::string& top) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
   auto reg = loadAgentsRegistry(cfg);
-  const std::vector<std::string> available = {"list", "show", "create", "delete", "use", "run"};
+  const std::vector<std::string> available = {"list", "show", "create", "delete", "use", "run", "runs"};
 
   std::string sub = "list";
   if (pos.size() >= 2) sub = pos[1];
@@ -389,6 +423,26 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
       return 1;
     }
     std::cout << json{{"ok", true}, {"command", top}, {"active", reg.value("active", "main")}, {"agent", *agent}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (sub == "runs" || sub == "history") {
+    std::string id = argValue(pos, "--agent").value_or(reg.value("active", "main"));
+    if (pos.size() >= 3 && !pos[2].empty() && pos[2].rfind("--", 0) != 0) id = pos[2];
+    if (!findAgent(reg, id).has_value()) {
+      std::cout << json{{"ok", false}, {"error", "agent_not_found"}, {"agentId", id}}.dump(2) << std::endl;
+      return 1;
+    }
+    int limit = 20;
+    try {
+      limit = std::max(1, std::stoi(argValue(pos, "--limit").value_or("20")));
+    } catch (...) {
+      std::cout << json{{"ok", false}, {"error", "invalid_limit"}, {"value", argValue(pos, "--limit").value_or("")}}.dump(2) << std::endl;
+      return 1;
+    }
+    json arr = json::array();
+    for (const auto& row : listAgentRunRecords(cfg, id, limit)) arr.push_back(row);
+    std::cout << json{{"ok", true}, {"command", top}, {"subcommand", "runs"}, {"agentId", id}, {"limit", limit}, {"runs", arr}}.dump(2) << std::endl;
     return 0;
   }
 
@@ -470,11 +524,10 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
     }
     const auto message = argValue(pos, "--message");
     if (!message.has_value() || message->empty()) {
-      std::cout << json{{"ok", false}, {"error", "usage"}, {"usage", top + " run [<agent-id>|--agent <id>] --message <text> [--timeout-ms <ms>]"}}.dump(2) << std::endl;
+      std::cout << json{{"ok", false}, {"error", "usage"}, {"usage", top + " run [<agent-id>|--agent <id>] --message <text> [--timeout-ms <ms>] [--model <name>] [--thinking <level>] [--run-timeout-seconds <s>] [--cleanup <keep|delete>]"}}.dump(2) << std::endl;
       return 1;
     }
 
-    const std::string base = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
     int timeoutMs = 30000;
     try {
       timeoutMs = std::max(1000, std::stoi(argValue(pos, "--timeout-ms").value_or("30000")));
@@ -482,37 +535,96 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
       std::cout << json{{"ok", false}, {"error", "invalid_timeout_ms"}, {"value", argValue(pos, "--timeout-ms").value_or("")}}.dump(2) << std::endl;
       return 1;
     }
-    const auto remoteTask = httpPostJson(base + "/api/tasks", json{{"channel", "cli"},
-                                                                     {"peerId", "agent:" + id},
-                                                                     {"text", *message},
-                                                                     {"timeoutMs", timeoutMs}}, authHeaderFromEnv(cfg));
+
+    const std::string model = argValue(pos, "--model").value_or("");
+    const std::string thinking = argValue(pos, "--thinking").value_or("");
+    if (!thinking.empty()) {
+      const std::set<std::string> allowed = {"off", "minimal", "low", "medium", "high", "xhigh"};
+      if (!allowed.count(thinking)) {
+        std::cout << json{{"ok", false}, {"error", "invalid_thinking"}, {"value", thinking}, {"allowed", json::array({"off", "minimal", "low", "medium", "high", "xhigh"})}}.dump(2) << std::endl;
+        return 1;
+      }
+    }
+
+    int runTimeoutSeconds = 0;
+    const bool hasRunTimeoutSeconds = argValue(pos, "--run-timeout-seconds").has_value();
+    if (hasRunTimeoutSeconds) {
+      try {
+        runTimeoutSeconds = std::max(0, std::stoi(argValue(pos, "--run-timeout-seconds").value_or("0")));
+      } catch (...) {
+        std::cout << json{{"ok", false}, {"error", "invalid_run_timeout_seconds"}, {"value", argValue(pos, "--run-timeout-seconds").value_or("")}}.dump(2) << std::endl;
+        return 1;
+      }
+    }
+
+    const std::string cleanup = argValue(pos, "--cleanup").value_or("");
+    if (!cleanup.empty() && cleanup != "keep" && cleanup != "delete") {
+      std::cout << json{{"ok", false}, {"error", "invalid_cleanup"}, {"value", cleanup}, {"allowed", json::array({"keep", "delete"})}}.dump(2) << std::endl;
+      return 1;
+    }
+
+    const int64_t startedAtMs = nowMillis();
+    const std::string sessionKey = agent->value("sessionKey", id == "main" ? "main" : "agent:" + id);
+    const std::string runId = "run-" + std::to_string(startedAtMs) + "-" + std::to_string(static_cast<uint64_t>(std::hash<std::string>{}(id + *message + sessionKey)) & 0xffff);
+
+    json runOptions = json{{"timeoutMs", timeoutMs}};
+    if (!model.empty()) runOptions["model"] = model;
+    if (!thinking.empty()) runOptions["thinking"] = thinking;
+    if (hasRunTimeoutSeconds) runOptions["runTimeoutSeconds"] = runTimeoutSeconds;
+    if (!cleanup.empty()) runOptions["cleanup"] = cleanup;
+
+    const std::string base = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
+    json taskReq = json{{"channel", "cli"}, {"peerId", "agent:" + id}, {"text", *message}, {"timeoutMs", timeoutMs}};
+    if (!model.empty()) taskReq["model"] = model;
+    if (!thinking.empty()) taskReq["thinking"] = thinking;
+    if (hasRunTimeoutSeconds) taskReq["runTimeoutSeconds"] = runTimeoutSeconds;
+    if (!cleanup.empty()) taskReq["cleanup"] = cleanup;
+
+    const auto remoteTask = httpPostJson(base + "/api/tasks", taskReq, authHeaderFromEnv(cfg));
     if (remoteTask.has_value() && remoteTask->value("ok", false)) {
       json out = *remoteTask;
       out["agent"] = *agent;
       out["mode"] = "gateway-task";
+      out["run"] = json{{"runId", runId}, {"status", "queued"}, {"startedAtMs", startedAtMs}, {"options", runOptions}};
+      appendAgentRunRecord(cfg, json{{"runId", runId}, {"agentId", id}, {"sessionKey", sessionKey}, {"mode", "gateway-task"}, {"status", "queued"}, {"message", *message}, {"startedAtMs", startedAtMs}, {"options", runOptions}});
       std::cout << out.dump(2) << std::endl;
       return 0;
     }
 
-    const std::string sessionKey = agent->value("sessionKey", id == "main" ? "main" : "agent:" + id);
     const auto remoteMsg = httpPostJson(base + "/api/message", json{{"sessionKey", sessionKey}, {"text", *message}}, authHeaderFromEnv(cfg));
     if (remoteMsg.has_value() && remoteMsg->value("ok", false)) {
       json out = *remoteMsg;
       out["agent"] = *agent;
       out["mode"] = "gateway-message";
+      out["run"] = json{{"runId", runId}, {"status", "submitted"}, {"startedAtMs", startedAtMs}, {"options", runOptions}};
+      appendAgentRunRecord(cfg, json{{"runId", runId}, {"agentId", id}, {"sessionKey", sessionKey}, {"mode", "gateway-message"}, {"status", "submitted"}, {"message", *message}, {"startedAtMs", startedAtMs}, {"options", runOptions}});
       std::cout << out.dump(2) << std::endl;
       return 0;
+    }
+
+    if (!model.empty() || !thinking.empty() || hasRunTimeoutSeconds || !cleanup.empty()) {
+      std::cout << json{{"ok", false},
+                        {"error", "advanced_options_require_gateway"},
+                        {"mode", "local-session"},
+                        {"unsupportedOptions", runOptions},
+                        {"supportedWithoutGateway", json::array({"timeoutMs", "message", "agentId"})}}
+                       .dump(2)
+                << std::endl;
+      appendAgentRunRecord(cfg, json{{"runId", runId}, {"agentId", id}, {"sessionKey", sessionKey}, {"mode", "local-session"}, {"status", "rejected"}, {"message", *message}, {"startedAtMs", startedAtMs}, {"options", runOptions}, {"error", "advanced_options_require_gateway"}});
+      return 1;
     }
 
     clawforge::session::SessionStore sessions(cfg.stateDir);
     sessions.init();
     sessions.ensureSession(sessionKey);
     sessions.appendMessage(sessionKey, "user", *message);
+    appendAgentRunRecord(cfg, json{{"runId", runId}, {"agentId", id}, {"sessionKey", sessionKey}, {"mode", "local-session"}, {"status", "stored"}, {"message", *message}, {"startedAtMs", startedAtMs}, {"options", runOptions}});
     std::cout << json{{"ok", true},
                       {"mode", "local-session"},
                       {"queued", false},
                       {"agent", *agent},
                       {"sessionKey", sessionKey},
+                      {"run", json{{"runId", runId}, {"status", "stored"}, {"startedAtMs", startedAtMs}, {"options", runOptions}}},
                       {"note", "Gateway unavailable: stored as user message only"}}
                      .dump(2)
               << std::endl;
