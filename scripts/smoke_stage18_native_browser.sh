@@ -19,10 +19,24 @@ cfg['browser']['backend']='native'
 json.dump(cfg, open(sys.argv[1], 'w'), indent=2)
 PY
 
-"$BIN" browser status --config "$CFG" | grep -q '"backend": "native"'
+STATUS_OUT=$("$BIN" browser status --config "$CFG")
+echo "$STATUS_OUT" | grep -q '"backend": "native"'
+HTTP_FETCH_AVAILABLE=$(python3 - <<'PY' "$STATUS_OUT"
+import json,sys
+j=json.loads(sys.argv[1])
+print('1' if bool((j.get('nativeRuntime') or {}).get('httpFetch')) else '0')
+PY
+)
 
 OPEN_EXAMPLE=$("$BIN" browser open https://example.com --config "$CFG")
 echo "$OPEN_EXAMPLE" | grep -q '"ok": true'
+python3 - <<'PY' "$OPEN_EXAMPLE"
+import json,sys
+j=json.loads(sys.argv[1])
+r=j.get('runtime') or {}
+assert r.get('source') in ('http_fetch','url_only','data_url'), 'runtime source missing on open'
+print('ok')
+PY
 TID_EXAMPLE=$(python3 - <<'PY' "$OPEN_EXAMPLE"
 import json,sys
 print(json.loads(sys.argv[1]).get('targetId',''))
@@ -32,6 +46,20 @@ PY
 
 SNAP_EXAMPLE=$("$BIN" browser snapshot --target-id "$TID_EXAMPLE" --config "$CFG")
 echo "$SNAP_EXAMPLE" | grep -q '"format": "ai"'
+python3 - <<'PY' "$OPEN_EXAMPLE" "$SNAP_EXAMPLE" "$HTTP_FETCH_AVAILABLE"
+import json,sys
+o=json.loads(sys.argv[1]); s=json.loads(sys.argv[2]); fetch=sys.argv[3]=='1'
+for j in (o,s):
+    r=j.get('runtime') or {}
+    assert r.get('source') in ('http_fetch','url_only','data_url'), 'runtime source missing'
+if not fetch:
+    w=(o.get('runtime') or {}).get('warning') or (s.get('runtime') or {}).get('warning') or {}
+    if w:
+        assert str(w.get('code','')).startswith('native_runtime_'), 'unexpected warning code'
+if fetch and (s.get('runtime') or {}).get('source')=='http_fetch':
+    assert s.get('title'), 'expected non-empty title in http_fetch mode'
+print('ok')
+PY
 REF_LINK=$(python3 - <<'PY' "$SNAP_EXAMPLE"
 import json,sys
 j=json.loads(sys.argv[1])

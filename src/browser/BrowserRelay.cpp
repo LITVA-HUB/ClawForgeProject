@@ -100,6 +100,23 @@ std::string attrValue(const std::string& attrs, const std::string& key) {
   return "";
 }
 
+bool isHttpUrl(const std::string& url) {
+  return url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0;
+}
+
+std::string extractTitle(const std::string& html) {
+  std::smatch m;
+  if (std::regex_search(html, m, std::regex("<title\\b[^>]*>(.*?)</title>", std::regex::icase)) && m.size() >= 2) {
+    return collapseWhitespace(stripTags(m[1].str()));
+  }
+  return "";
+}
+
+bool nativeHttpFetchAvailable() {
+  const auto hasCurl = util::Shell::run("command -v curl");
+  return hasCurl.exitCode == 0;
+}
+
 }  // namespace
 
 BrowserRelay::BrowserRelay(core::BrowserConfig config) : config_(std::move(config)) {}
@@ -180,6 +197,10 @@ void BrowserRelay::nativeLoadStateLocked() const {
     t.url = item.value("url", "");
     t.title = item.value("title", "");
     t.html = item.value("html", "");
+    t.runtime.source = item.value("runtimeSource", "");
+    if (item.contains("runtimeWarning") && item["runtimeWarning"].is_object()) {
+      t.runtime.warning = item["runtimeWarning"];
+    }
 
     if (item.contains("refs") && item["refs"].is_object()) {
       for (auto it = item["refs"].begin(); it != item["refs"].end(); ++it) {
@@ -220,6 +241,8 @@ void BrowserRelay::nativeSaveStateLocked() const {
                        {"url", t.url},
                        {"title", t.title},
                        {"html", t.html},
+                       {"runtimeSource", t.runtime.source},
+                       {"runtimeWarning", t.runtime.warning.is_object() ? t.runtime.warning : nlohmann::json::object()},
                        {"refs", refs},
                        {"typedValues", typed}});
   }
@@ -258,7 +281,58 @@ nlohmann::json BrowserRelay::nativeStatus() const {
           {"targets", nativeTargets_.size()},
           {"activeTargetId", nativeLastTargetId_},
           {"capabilities", {"status", "open", "navigate", "snapshot", "click", "type", "screenshot"}},
-          {"limitations", {"Native backend is deterministic emulation and not a full browser engine."}}};
+          {"nativeRuntime",
+           {{"httpFetch", nativeHttpFetchAvailable()},
+            {"parsedUrlSchemes", {"data:text/html", "http", "https"}},
+            {"structuredWarnings", true}}},
+          {"limitations", {"Native backend is still not a full browser engine (no JS execution / CDP session control)."}}};
+}
+
+static void applyNativeRuntimeContent(BrowserRelay::NativeTarget& t) {
+  t.runtime.source = "url_only";
+  t.runtime.warning = nlohmann::json::object();
+  t.title = t.url;
+  t.html.clear();
+
+  const std::string dataHtml = decodeDataHtml(t.url);
+  if (!dataHtml.empty()) {
+    t.html = dataHtml;
+    const std::string title = extractTitle(t.html);
+    if (!title.empty()) t.title = title;
+    t.runtime.source = "data_url";
+    return;
+  }
+
+  if (!isHttpUrl(t.url)) {
+    t.runtime.warning = {{"code", "native_runtime_url_scheme_unsupported"},
+                         {"message", "Only data: and http(s) URLs are parsed by native runtime"},
+                         {"url", t.url}};
+    return;
+  }
+
+  if (!nativeHttpFetchAvailable()) {
+    t.runtime.warning = {{"code", "native_runtime_http_fetch_unavailable"},
+                         {"message", "curl is required for native runtime HTTP page fetch"}};
+    return;
+  }
+
+  const std::string cmd =
+      "curl -L --silent --show-error --fail --max-time 8 " + util::Shell::quote(t.url);
+  const auto res = util::Shell::run(cmd);
+  if (res.exitCode != 0) {
+    t.runtime.warning = {{"code", "native_runtime_http_fetch_failed"},
+                         {"message", "HTTP fetch failed; keeping URL-only fallback"},
+                         {"exitCode", res.exitCode},
+                         {"detail", trim(res.output)}};
+    return;
+  }
+
+  t.html = res.output;
+  t.runtime.source = "http_fetch";
+  const std::string title = extractTitle(t.html);
+  if (!title.empty()) {
+    t.title = title;
+  }
 }
 
 static void rebuildRefs(BrowserRelay::NativeTarget& t) {
@@ -375,19 +449,21 @@ nlohmann::json BrowserRelay::nativeOpen(const std::string& url) const {
   ++nativeCounter_;
   t.targetId = "native-" + std::to_string(nativeCounter_);
   t.url = url;
-  t.title = url;
-  t.html = decodeDataHtml(url);
+  applyNativeRuntimeContent(t);
   rebuildRefs(t);
 
   nativeTargets_[t.targetId] = t;
   nativeLastTargetId_ = t.targetId;
   nativeSaveStateLocked();
 
-  return {{"ok", true},
-          {"backend", "native"},
-          {"targetId", t.targetId},
-          {"url", t.url},
-          {"createdTarget", true}};
+  nlohmann::json out{{"ok", true},
+                     {"backend", "native"},
+                     {"targetId", t.targetId},
+                     {"url", t.url},
+                     {"createdTarget", true},
+                     {"runtime", {{"source", t.runtime.source}}}};
+  if (t.runtime.warning.is_object() && !t.runtime.warning.empty()) out["runtime"]["warning"] = t.runtime.warning;
+  return out;
 }
 
 nlohmann::json BrowserRelay::nativeNavigate(const std::string& url, const std::string& targetId) const {
@@ -411,17 +487,21 @@ nlohmann::json BrowserRelay::nativeNavigate(const std::string& url, const std::s
   }
 
   it->second.url = url;
-  it->second.title = url;
-  it->second.html = decodeDataHtml(url);
+  applyNativeRuntimeContent(it->second);
   rebuildRefs(it->second);
   nativeLastTargetId_ = targetId;
   nativeSaveStateLocked();
 
-  return {{"ok", true},
-          {"backend", "native"},
-          {"targetId", targetId},
-          {"url", url},
-          {"navigated", true}};
+  nlohmann::json out{{"ok", true},
+                     {"backend", "native"},
+                     {"targetId", targetId},
+                     {"url", url},
+                     {"navigated", true},
+                     {"runtime", {{"source", it->second.runtime.source}}}};
+  if (it->second.runtime.warning.is_object() && !it->second.runtime.warning.empty()) {
+    out["runtime"]["warning"] = it->second.runtime.warning;
+  }
+  return out;
 }
 
 nlohmann::json BrowserRelay::nativeSnapshot(const std::string& urlHint, const std::string& targetId) const {
@@ -463,14 +543,19 @@ nlohmann::json BrowserRelay::nativeSnapshot(const std::string& urlHint, const st
     refs[ref] = {{"role", info.role}, {"name", info.name}, {"text", info.text}};
   }
 
-  return {{"ok", true},
-          {"backend", "native"},
-          {"format", "ai"},
-          {"targetId", resolvedTargetId},
-          {"url", it->second.url},
-          {"title", it->second.title},
-          {"refs", refs},
-          {"elements", refs.size()}};
+  nlohmann::json out{{"ok", true},
+                     {"backend", "native"},
+                     {"format", "ai"},
+                     {"targetId", resolvedTargetId},
+                     {"url", it->second.url},
+                     {"title", it->second.title},
+                     {"refs", refs},
+                     {"elements", refs.size()},
+                     {"runtime", {{"source", it->second.runtime.source}}}};
+  if (it->second.runtime.warning.is_object() && !it->second.runtime.warning.empty()) {
+    out["runtime"]["warning"] = it->second.runtime.warning;
+  }
+  return out;
 }
 
 nlohmann::json BrowserRelay::nativeClick(const std::string& ref, const std::string& targetId,
@@ -498,11 +583,14 @@ nlohmann::json BrowserRelay::nativeClick(const std::string& ref, const std::stri
                      {"double", doubleClick}};
   if (!refIt->second.href.empty()) {
     it->second.url = refIt->second.href;
-    it->second.title = refIt->second.href;
-    it->second.html.clear();
+    applyNativeRuntimeContent(it->second);
     rebuildRefs(it->second);
     out["navigated"] = true;
     out["url"] = it->second.url;
+    out["runtime"] = {{"source", it->second.runtime.source}};
+    if (it->second.runtime.warning.is_object() && !it->second.runtime.warning.empty()) {
+      out["runtime"]["warning"] = it->second.runtime.warning;
+    }
   }
   nativeSaveStateLocked();
   return out;

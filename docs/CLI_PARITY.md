@@ -58,7 +58,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
 ## Key subcommand parity details
 
-### Browser (Stage 18 native slice2)
+### Browser (Stage 20 native slice1 uplift)
 - `browser status` — **implemented**
 - `browser open <url>` — **implemented**
 - `browser navigate <url>` — **implemented**
@@ -67,7 +67,8 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - `browser type <ref> <text>` — **implemented baseline**
 - `browser screenshot [targetId]` — **implemented baseline**
 - native parity improvements (slice2): stable target lifecycle (`activeTargetId`), stronger deterministic ref stability across snapshots, type/click state effects visible in snapshot flow, and safer persisted state writes
-- limitation: native backend is still deterministic emulation (not full CDP/Playwright control); use `browser.backend=openclaw_cli` when real OpenClaw browser automation is required
+- stage20 slice1 uplift: runtime-aware native loading for `data:` + `http(s)` content (via local `curl` capability), additive `runtime` metadata on open/navigate/snapshot/click, and structured native warning codes when runtime fetch is unavailable/fails
+- limitation: native backend is still not full CDP/Playwright control (no full JS runtime/CDP sessions); use `browser.backend=openclaw_cli` when real OpenClaw browser automation is required
 
 ### Cron (Stage 14 semantic baseline)
 - `cron status` — **implemented**

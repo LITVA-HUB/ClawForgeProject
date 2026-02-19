@@ -37,11 +37,17 @@ class BrowserRelay {
     std::string signature;
   };
 
+  struct NativeRuntime {
+    std::string source;
+    nlohmann::json warning;
+  };
+
   struct NativeTarget {
     std::string targetId;
     std::string url;
     std::string title;
     std::string html;
+    NativeRuntime runtime;
     std::map<std::string, NativeRef> refs;
     std::map<std::string, std::string> typedValues;
   };
