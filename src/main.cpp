@@ -200,6 +200,49 @@ std::vector<std::string> splitCsv(const std::string& raw) {
   return out;
 }
 
+std::vector<std::string> uniqueStringsPreserveOrder(const std::vector<std::string>& in) {
+  std::vector<std::string> out;
+  std::set<std::string> seen;
+  for (const auto& v : in) {
+    if (v.empty() || seen.count(v)) continue;
+    seen.insert(v);
+    out.push_back(v);
+  }
+  return out;
+}
+
+json normalizeAgentContextPolicy(const json& src) {
+  json out = json::object();
+  if (!src.is_object()) return out;
+  if (src.contains("historyLimit") && src["historyLimit"].is_number_integer()) {
+    out["historyLimit"] = std::clamp(src["historyLimit"].get<int>(), 1, 200);
+  }
+  if (src.contains("carryover") && src["carryover"].is_string()) {
+    const std::string mode = src["carryover"].get<std::string>();
+    const std::set<std::string> allowed = {"inherit", "minimal", "none"};
+    if (allowed.count(mode)) out["carryover"] = mode;
+  }
+  return out;
+}
+
+json normalizeAgentToolsPolicy(const json& src) {
+  json out = json::object();
+  if (!src.is_object()) return out;
+  if (src.contains("allow") && src["allow"].is_array()) {
+    std::vector<std::string> allow;
+    for (const auto& v : src["allow"]) if (v.is_string()) allow.push_back(v.get<std::string>());
+    allow = uniqueStringsPreserveOrder(allow);
+    if (!allow.empty()) out["allow"] = allow;
+  }
+  if (src.contains("deny") && src["deny"].is_array()) {
+    std::vector<std::string> deny;
+    for (const auto& v : src["deny"]) if (v.is_string()) deny.push_back(v.get<std::string>());
+    deny = uniqueStringsPreserveOrder(deny);
+    if (!deny.empty()) out["deny"] = deny;
+  }
+  return out;
+}
+
 bool hasFlag(const std::vector<std::string>& pos, const std::string& flag) {
   for (const auto& x : pos)
     if (x == flag) return true;
@@ -333,6 +376,15 @@ json normalizeAgentsRegistry(json reg) {
       item["sessionKey"] = (id == "main" ? "main" : "agent:" + id);
     }
     if (!item.contains("createdAtMs")) item["createdAtMs"] = nowMillis();
+
+    const json normalizedContext = normalizeAgentContextPolicy(item.contains("context") ? item["context"] : json::object());
+    if (!normalizedContext.empty()) item["context"] = normalizedContext;
+    else if (item.contains("context")) item.erase("context");
+
+    const json normalizedTools = normalizeAgentToolsPolicy(item.contains("tools") ? item["tools"] : json::object());
+    if (!normalizedTools.empty()) item["tools"] = normalizedTools;
+    else if (item.contains("tools")) item.erase("tools");
+
     normalized.push_back(item);
     if (id == "main") hasMain = true;
   }
@@ -531,7 +583,7 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
 
   if (sub == "update" || sub == "set" || sub == "set-identity") {
     if (pos.size() < 3 && !argValue(pos, "--agent").has_value()) {
-      std::cout << json{{"ok", false}, {"error", "usage"}, {"usage", top + " update <agent-id>|--agent <id> [--name <display-name>] [--session-key <session>] [--profile <name>] [--description <text>] [--role <text>] [--tags <a,b>] [--subagent-model <name>] [--subagent-thinking <level>] [--allow-agents <csv|*>] [--max-concurrent <n>] [--archive-after-minutes <n>]"}}.dump(2) << std::endl;
+      std::cout << json{{"ok", false}, {"error", "usage"}, {"usage", top + " update <agent-id>|--agent <id> [--name <display-name>] [--session-key <session>] [--profile <name>] [--description <text>] [--role <text>] [--tags <a,b>] [--subagent-model <name>] [--subagent-thinking <level>] [--allow-agents <csv|*>] [--max-concurrent <n>] [--archive-after-minutes <n>] [--context-history-limit <n>] [--context-carryover <inherit|minimal|none>] [--tool-allow <csv|*>] [--tool-deny <csv>]"}}.dump(2) << std::endl;
       return 1;
     }
     const std::string id = argValue(pos, "--agent").value_or(pos.size() >= 3 ? pos[2] : reg.value("active", "main"));
@@ -580,6 +632,51 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
         }
       }
       if (!subagents.empty()) row["subagents"] = subagents;
+
+      json context = row.contains("context") && row["context"].is_object() ? row["context"] : json::object();
+      if (const auto historyLimit = argValue(pos, "--context-history-limit"); historyLimit.has_value()) {
+        try {
+          context["historyLimit"] = std::clamp(std::stoi(*historyLimit), 1, 200);
+        } catch (...) {
+          std::cout << json{{"ok", false}, {"error", "invalid_context_history_limit"}, {"value", *historyLimit}}.dump(2) << std::endl;
+          return 1;
+        }
+      }
+      if (const auto carryover = argValue(pos, "--context-carryover"); carryover.has_value()) {
+        const std::set<std::string> allowed = {"inherit", "minimal", "none"};
+        if (!allowed.count(*carryover)) {
+          std::cout << json{{"ok", false}, {"error", "invalid_context_carryover"}, {"value", *carryover}, {"allowed", json::array({"inherit", "minimal", "none"})}}.dump(2) << std::endl;
+          return 1;
+        }
+        context["carryover"] = *carryover;
+      }
+      context = normalizeAgentContextPolicy(context);
+      if (!context.empty()) row["context"] = context;
+
+      json toolsPolicy = row.contains("tools") && row["tools"].is_object() ? row["tools"] : json::object();
+      if (const auto toolAllow = argValue(pos, "--tool-allow"); toolAllow.has_value()) {
+        if (*toolAllow == "*") {
+          toolsPolicy["allow"] = json::array({"*"});
+        } else {
+          const auto parsed = uniqueStringsPreserveOrder(splitCsv(*toolAllow));
+          if (parsed.empty()) {
+            std::cout << json{{"ok", false}, {"error", "invalid_tool_allow"}, {"value", *toolAllow}}.dump(2) << std::endl;
+            return 1;
+          }
+          toolsPolicy["allow"] = parsed;
+        }
+      }
+      if (const auto toolDeny = argValue(pos, "--tool-deny"); toolDeny.has_value()) {
+        const auto parsed = uniqueStringsPreserveOrder(splitCsv(*toolDeny));
+        if (parsed.empty()) {
+          std::cout << json{{"ok", false}, {"error", "invalid_tool_deny"}, {"value", *toolDeny}}.dump(2) << std::endl;
+          return 1;
+        }
+        toolsPolicy["deny"] = parsed;
+      }
+      toolsPolicy = normalizeAgentToolsPolicy(toolsPolicy);
+      if (!toolsPolicy.empty()) row["tools"] = toolsPolicy;
+
       row["updatedAtMs"] = nowMillis();
       break;
     }
@@ -648,7 +745,7 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
     }
     const auto message = argValue(pos, "--message");
     if (!message.has_value() || message->empty()) {
-      std::cout << json{{"ok", false}, {"error", "usage"}, {"usage", top + " run [<agent-id>|--agent <id>] --message <text> [--timeout-ms <ms>] [--model <name>] [--thinking <level>] [--run-timeout-seconds <s>] [--cleanup <keep|delete>]"}}.dump(2) << std::endl;
+      std::cout << json{{"ok", false}, {"error", "usage"}, {"usage", top + " run [<agent-id>|--agent <id>] --message <text> [--timeout-ms <ms>] [--model <name>] [--thinking <level>] [--run-timeout-seconds <s>] [--cleanup <keep|delete>] [--context-history-limit <n>] [--context-carryover <inherit|minimal|none>] [--tool-allow <csv|*>] [--tool-deny <csv>]"}}.dump(2) << std::endl;
       return 1;
     }
 
@@ -687,6 +784,52 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
       return 1;
     }
 
+    json contextPolicy = normalizeAgentContextPolicy(agent->contains("context") ? (*agent)["context"] : json::object());
+    json toolsPolicy = normalizeAgentToolsPolicy(agent->contains("tools") ? (*agent)["tools"] : json::object());
+
+    if (const auto historyLimit = argValue(pos, "--context-history-limit"); historyLimit.has_value()) {
+      try {
+        contextPolicy["historyLimit"] = std::clamp(std::stoi(*historyLimit), 1, 200);
+      } catch (...) {
+        std::cout << json{{"ok", false}, {"error", "invalid_context_history_limit"}, {"value", *historyLimit}}.dump(2) << std::endl;
+        return 1;
+      }
+    }
+
+    if (const auto carryover = argValue(pos, "--context-carryover"); carryover.has_value()) {
+      const std::set<std::string> allowed = {"inherit", "minimal", "none"};
+      if (!allowed.count(*carryover)) {
+        std::cout << json{{"ok", false}, {"error", "invalid_context_carryover"}, {"value", *carryover}, {"allowed", json::array({"inherit", "minimal", "none"})}}.dump(2) << std::endl;
+        return 1;
+      }
+      contextPolicy["carryover"] = *carryover;
+    }
+
+    if (const auto toolAllow = argValue(pos, "--tool-allow"); toolAllow.has_value()) {
+      if (*toolAllow == "*") {
+        toolsPolicy["allow"] = json::array({"*"});
+      } else {
+        const auto parsed = uniqueStringsPreserveOrder(splitCsv(*toolAllow));
+        if (parsed.empty()) {
+          std::cout << json{{"ok", false}, {"error", "invalid_tool_allow"}, {"value", *toolAllow}}.dump(2) << std::endl;
+          return 1;
+        }
+        toolsPolicy["allow"] = parsed;
+      }
+    }
+
+    if (const auto toolDeny = argValue(pos, "--tool-deny"); toolDeny.has_value()) {
+      const auto parsed = uniqueStringsPreserveOrder(splitCsv(*toolDeny));
+      if (parsed.empty()) {
+        std::cout << json{{"ok", false}, {"error", "invalid_tool_deny"}, {"value", *toolDeny}}.dump(2) << std::endl;
+        return 1;
+      }
+      toolsPolicy["deny"] = parsed;
+    }
+
+    contextPolicy = normalizeAgentContextPolicy(contextPolicy);
+    toolsPolicy = normalizeAgentToolsPolicy(toolsPolicy);
+
     const int64_t startedAtMs = nowMillis();
     const std::string sessionKey = agent->value("sessionKey", id == "main" ? "main" : "agent:" + id);
     const std::string runId = "run-" + std::to_string(startedAtMs) + "-" + std::to_string(static_cast<uint64_t>(std::hash<std::string>{}(id + *message + sessionKey)) & 0xffff);
@@ -696,6 +839,8 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
     if (!thinking.empty()) runOptions["thinking"] = thinking;
     if (hasRunTimeoutSeconds) runOptions["runTimeoutSeconds"] = runTimeoutSeconds;
     if (!cleanup.empty()) runOptions["cleanup"] = cleanup;
+    if (!contextPolicy.empty()) runOptions["context"] = contextPolicy;
+    if (!toolsPolicy.empty()) runOptions["tools"] = toolsPolicy;
 
     const std::string base = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
     json taskReq = json{{"channel", "cli"}, {"peerId", "agent:" + id}, {"text", *message}, {"timeoutMs", timeoutMs}};
@@ -703,6 +848,8 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
     if (!thinking.empty()) taskReq["thinking"] = thinking;
     if (hasRunTimeoutSeconds) taskReq["runTimeoutSeconds"] = runTimeoutSeconds;
     if (!cleanup.empty()) taskReq["cleanup"] = cleanup;
+    if (!contextPolicy.empty()) taskReq["context"] = contextPolicy;
+    if (!toolsPolicy.empty()) taskReq["tools"] = toolsPolicy;
 
     const auto remoteTask = httpPostJson(base + "/api/tasks", taskReq, authHeaderFromEnv(cfg));
     if (remoteTask.has_value() && remoteTask->value("ok", false)) {
@@ -727,7 +874,7 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
       return 0;
     }
 
-    if (!model.empty() || !thinking.empty() || hasRunTimeoutSeconds || !cleanup.empty()) {
+    if (!model.empty() || !thinking.empty() || hasRunTimeoutSeconds || !cleanup.empty() || !contextPolicy.empty() || !toolsPolicy.empty()) {
       std::cout << json{{"ok", false},
                         {"error", "advanced_options_require_gateway"},
                         {"mode", "local-session"},
