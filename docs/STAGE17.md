@@ -1,52 +1,68 @@
-# STAGE 17 — Slice 1: Native OAuth Device-Code Baseline (`openai-codex`)
+# STAGE 17 — Slice 2: Native OAuth Device-Code START + Poll (`openai-codex`)
 
 ## Scope
 
-This slice introduces a native NexaClaw baseline for OAuth device-code login under:
+This slice extends the Stage 17 native OAuth baseline under:
 
 - `models auth login --provider openai-codex`
 
-Goal: remove hard dependency on external `openclaw models auth login` for the practical baseline path, while keeping bridge import compatibility.
+Goal: native NexaClaw can now start (acquire) device codes directly from OpenAI-compatible endpoint, while preserving existing poll/store behavior and OpenClaw bridge fallback.
 
 ## What changed
 
-### 1) Native CLI path (`models auth login`)
+### 1) Native START acquisition in CLI (`models auth login`)
 
-New baseline flags:
+Native mode now supports two input paths:
 
-- `--device-code-json <json|@file>` — pass device-code payload inline or via file (`@path`)
-- `--poll` — poll token endpoint and store resulting access token in NexaClaw auth store
-- `--client-id <id>` — OAuth client id for poll (or env `OPENAI_CODEX_CLIENT_ID`)
-- `--token-url <url>` — token endpoint override (default: `https://api.openai.com/v1/oauth/token`)
+- **Provided payload** via `--device-code-json <json|@file>` (existing behavior)
+- **Auto-start acquisition** when `--device-code-json` is omitted
 
-Behavior:
+New practical flags/envs for start orchestration:
 
-- Without bridge flags, login defaults to **native mode**.
-- Native mode validates payload and prints structured JSON errors.
-- Without `--poll`, command returns a JSON phase payload (`device_code_ready`) for non-interactive orchestration.
-- With `--poll`, command exchanges `device_code` for `access_token`; on success stores profile as `oauth_token` and sets provider active profile.
+- `--device-start-url <url>` or env `OPENAI_CODEX_DEVICE_START_URL`
+  - default: `https://api.openai.com/v1/oauth/device/code`
+- `--client-id <id>` or env `OPENAI_CODEX_CLIENT_ID`
+- `--scope <scope>` or env `OPENAI_CODEX_SCOPE`
 
-Retry/error semantics in poll mode:
+Structured JSON start output remains machine-friendly and includes:
 
-- `authorization_pending` / `slow_down` -> JSON `retryable: true` and non-zero exit (2)
-- terminal OAuth errors -> JSON `retryable: false` and non-zero exit (1)
-- malformed/non-JSON transport responses -> explicit JSON diagnostics
+- `phase: "device_code_ready"`
+- `deviceCode.device_code`
+- `deviceCode.user_code`
+- `deviceCode.verification_uri`
+- `deviceCode.verification_uri_complete`
+- `deviceCode.interval`
+- `deviceCode.expires_in`
 
-### 2) Backward-compatible bridge retained
+Start-phase failures now return structured JSON with `phase: "device_code_start"`, error metadata, URL, and HTTP status where available.
 
-Legacy import flow stays available and can be forced with:
+### 2) Poll/store behavior unchanged (interoperable with start)
+
+- `--poll` still exchanges `device_code` at token endpoint (`--token-url`)
+- Success still stores OAuth access token to NexaClaw auth profile store and sets provider active profile
+- Retry semantics unchanged:
+  - `authorization_pending` / `slow_down` => `retryable: true`, exit code `2`
+  - terminal errors => exit code `1`
+
+Interoperability added: one command can now do native start + poll when `--poll` is used without `--device-code-json`.
+
+### 3) Bridge fallback preserved
+
+Legacy OpenClaw import bridge remains available via:
 
 - `--bridge-import`
-
-Legacy flags also auto-select bridge behavior:
-
 - `--openclaw-auth-file`
 - `--skip-login`
 - `--source-profile-id`
 
-Bridge result now includes `"bridge": true` in output JSON.
+Bridge output still includes `"bridge": true`.
 
-## Notes
+## Smoke coverage
 
-- This slice focuses on native poll/store baseline and robust UX/error JSON.
-- Direct native device-code *issuance/start* endpoint orchestration is still a follow-up item.
+Updated `scripts/smoke_stage17_native_oauth.sh` now validates:
+
+1. native start success without `--device-code-json`
+2. native start structured error path
+3. poll retryable error path (`authorization_pending`)
+4. start→poll interoperability in one native command
+5. bridge fallback import compatibility

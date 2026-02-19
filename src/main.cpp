@@ -543,12 +543,14 @@ int runModelsAuth(const std::string& configPath, const std::vector<std::string>&
     const auto deviceCodeJsonArg = argValue(pos, "--device-code-json");
     const auto tokenUrlArg = argValue(pos, "--token-url");
     const auto clientIdArg = argValue(pos, "--client-id");
+    const auto scopeArg = argValue(pos, "--scope");
+    const auto deviceStartUrlArg = argValue(pos, "--device-start-url");
     const bool poll = hasFlag(pos, "--poll");
     const bool forceBridge = hasFlag(pos, "--bridge-import");
     const bool legacySkipLogin = hasFlag(pos, "--skip-login");
 
     if (!provider.has_value()) {
-      std::cerr << "Usage: models auth login --provider <name> [--profile-id <dest-id>] [native: --device-code-json <json|@file> [--poll] [--token-url <url>] [--client-id <id>]] [bridge: --bridge-import|--skip-login|--openclaw-auth-file <path> [--source-profile-id <id>]]" << std::endl;
+      std::cerr << "Usage: models auth login --provider <name> [--profile-id <dest-id>] [native: --device-code-json <json|@file> [--poll] [--token-url <url>] [--client-id <id>] [--scope <scope>] [--device-start-url <url>]] [bridge: --bridge-import|--skip-login|--openclaw-auth-file <path> [--source-profile-id <id>]]" << std::endl;
       return 1;
     }
 
@@ -560,30 +562,128 @@ int runModelsAuth(const std::string& configPath, const std::vector<std::string>&
     const bool bridgeMode = forceBridge || legacySkipLogin || importPathArg.has_value() || sourceProfileId.has_value();
 
     if (!bridgeMode) {
-      if (!deviceCodeJsonArg.has_value()) {
-        std::cout << json{{"ok", false},
-                          {"provider", *provider},
-                          {"native", true},
-                          {"error", "Native device-code flow requires --device-code-json (<json> or @file). Use --bridge-import for legacy OpenClaw import bridge."}}
-                         .dump(2)
-                  << std::endl;
-        return 1;
+      std::string clientId;
+      if (clientIdArg.has_value()) {
+        clientId = *clientIdArg;
+      } else if (const char* envClient = std::getenv("OPENAI_CODEX_CLIENT_ID"); envClient && std::string(envClient).size() > 0) {
+        clientId = envClient;
       }
 
-      std::string deviceCodeRaw = *deviceCodeJsonArg;
-      if (!deviceCodeRaw.empty() && deviceCodeRaw[0] == '@') {
-        auto maybe = clawforge::util::FileUtil::readText(deviceCodeRaw.substr(1));
-        if (!maybe.has_value()) {
+      std::string scope;
+      if (scopeArg.has_value()) {
+        scope = *scopeArg;
+      } else if (const char* envScope = std::getenv("OPENAI_CODEX_SCOPE"); envScope && std::string(envScope).size() > 0) {
+        scope = envScope;
+      }
+
+      const std::string deviceStartUrl =
+          deviceStartUrlArg.value_or(std::getenv("OPENAI_CODEX_DEVICE_START_URL") ? std::string(std::getenv("OPENAI_CODEX_DEVICE_START_URL"))
+                                                                                    : std::string("https://api.openai.com/v1/oauth/device/code"));
+
+      std::string deviceCodeRaw;
+      if (deviceCodeJsonArg.has_value()) {
+        deviceCodeRaw = *deviceCodeJsonArg;
+        if (!deviceCodeRaw.empty() && deviceCodeRaw[0] == '@') {
+          auto maybe = clawforge::util::FileUtil::readText(deviceCodeRaw.substr(1));
+          if (!maybe.has_value()) {
+            std::cout << json{{"ok", false},
+                              {"provider", *provider},
+                              {"native", true},
+                              {"error", "Cannot read device-code JSON file"},
+                              {"path", deviceCodeRaw.substr(1)}}
+                             .dump(2)
+                      << std::endl;
+            return 1;
+          }
+          deviceCodeRaw = *maybe;
+        }
+      } else {
+        if (clientId.empty()) {
           std::cout << json{{"ok", false},
                             {"provider", *provider},
                             {"native", true},
-                            {"error", "Cannot read device-code JSON file"},
-                            {"path", deviceCodeRaw.substr(1)}}
+                            {"phase", "device_code_start"},
+                            {"error", "client_id is required for device-code start (pass --client-id or set OPENAI_CODEX_CLIENT_ID)"}}
                            .dump(2)
                     << std::endl;
           return 1;
         }
-        deviceCodeRaw = *maybe;
+
+        std::string startCmd = "curl -sS --max-time 10 -w '\n__HTTP__%{http_code}' -X POST " + clawforge::util::Shell::quote(deviceStartUrl) +
+                               " -H " + clawforge::util::Shell::quote("Content-Type: application/x-www-form-urlencoded") +
+                               " --data-urlencode " + clawforge::util::Shell::quote("client_id=" + clientId);
+        if (!scope.empty()) {
+          startCmd += " --data-urlencode " + clawforge::util::Shell::quote("scope=" + scope);
+        }
+
+        const auto startRes = clawforge::util::Shell::run(startCmd);
+        if (startRes.exitCode != 0) {
+          std::cout << json{{"ok", false},
+                            {"provider", *provider},
+                            {"native", true},
+                            {"phase", "device_code_start"},
+                            {"error", "OAuth device-code start request failed"},
+                            {"deviceStartUrl", deviceStartUrl},
+                            {"details", startRes.output}}
+                           .dump(2)
+                    << std::endl;
+          return 1;
+        }
+
+        const std::string marker = "\n__HTTP__";
+        const auto markerPos = startRes.output.rfind(marker);
+        if (markerPos == std::string::npos) {
+          std::cout << json{{"ok", false},
+                            {"provider", *provider},
+                            {"native", true},
+                            {"phase", "device_code_start"},
+                            {"error", "Unexpected OAuth device-code start response format"},
+                            {"deviceStartUrl", deviceStartUrl}}
+                           .dump(2)
+                    << std::endl;
+          return 1;
+        }
+
+        const std::string startBody = startRes.output.substr(0, markerPos);
+        const std::string startCodeRaw = startRes.output.substr(markerPos + marker.size());
+        int startHttpCode = 0;
+        try {
+          startHttpCode = std::stoi(startCodeRaw);
+        } catch (...) {
+          startHttpCode = 0;
+        }
+
+        auto startJson = json::parse(startBody, nullptr, false);
+        if (startJson.is_discarded() || !startJson.is_object()) {
+          std::cout << json{{"ok", false},
+                            {"provider", *provider},
+                            {"native", true},
+                            {"phase", "device_code_start"},
+                            {"error", "OAuth device-code start response is not valid JSON"},
+                            {"deviceStartUrl", deviceStartUrl},
+                            {"httpStatus", startHttpCode},
+                            {"raw", startBody}}
+                           .dump(2)
+                    << std::endl;
+          return 1;
+        }
+
+        const std::string startError = startJson.value("error", "");
+        if (startHttpCode >= 400 || !startError.empty()) {
+          std::cout << json{{"ok", false},
+                            {"provider", *provider},
+                            {"native", true},
+                            {"phase", "device_code_start"},
+                            {"error", startError.empty() ? std::string("oauth_device_code_start_failed") : startError},
+                            {"error_description", startJson.value("error_description", "")},
+                            {"deviceStartUrl", deviceStartUrl},
+                            {"httpStatus", startHttpCode}}
+                           .dump(2)
+                    << std::endl;
+          return 1;
+        }
+
+        deviceCodeRaw = startJson.dump();
       }
 
       auto deviceCode = json::parse(deviceCodeRaw, nullptr, false);
@@ -603,7 +703,7 @@ int runModelsAuth(const std::string& configPath, const std::vector<std::string>&
       const int expiresIn = deviceCode.value("expires_in", 900);
 
       if (deviceCodeValue.empty()) {
-        std::cout << json{{"ok", false}, {"provider", *provider}, {"native", true}, {"error", "device_code is required in --device-code-json"}}
+        std::cout << json{{"ok", false}, {"provider", *provider}, {"native", true}, {"error", "device_code is required in device-code payload"}}
                          .dump(2)
                   << std::endl;
         return 1;
@@ -614,25 +714,20 @@ int runModelsAuth(const std::string& configPath, const std::vector<std::string>&
                           {"provider", *provider},
                           {"native", true},
                           {"phase", "device_code_ready"},
+                          {"deviceStartUrl", deviceStartUrl},
                           {"deviceCode", json{{"device_code", deviceCodeValue},
                                                {"user_code", userCode},
                                                {"verification_uri", verificationUri},
                                                {"verification_uri_complete", verificationUriComplete},
                                                {"interval", interval},
                                                {"expires_in", expiresIn}}},
-                          {"next", "Run the same command with --poll after user authorizes the device code."}}
+                          {"next", "Authorize with verification_uri + user_code, then run the same command with --poll (or pass --device-code-json explicitly)."}}
                          .dump(2)
                   << std::endl;
         return 0;
       }
 
       const std::string tokenUrl = tokenUrlArg.value_or("https://api.openai.com/v1/oauth/token");
-      std::string clientId;
-      if (clientIdArg.has_value()) {
-        clientId = *clientIdArg;
-      } else if (const char* envClient = std::getenv("OPENAI_CODEX_CLIENT_ID"); envClient && std::string(envClient).size() > 0) {
-        clientId = envClient;
-      }
       if (clientId.empty()) {
         std::cout << json{{"ok", false},
                           {"provider", *provider},
@@ -739,8 +834,9 @@ int runModelsAuth(const std::string& configPath, const std::vector<std::string>&
       if (tokenExpiresIn > 0) p.expiresAt = clawforge::models::AuthProfileStore::addSecondsUtcRfc3339(tokenExpiresIn);
       p.meta = json{{"nativeDeviceCode", true},
                     {"tokenUrl", tokenUrl},
+                    {"deviceStartUrl", deviceStartUrl},
                     {"clientId", clientId},
-                    {"scope", tokenResp.value("scope", "")},
+                    {"scope", tokenResp.value("scope", scope)},
                     {"tokenType", tokenResp.value("token_type", "")}};
 
       if (!store.upsert(p)) {

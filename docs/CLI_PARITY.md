@@ -110,7 +110,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - `models set-image` — **implemented** (config op baseline)
 - `models auth list|add|paste-token|setup-token|login|use|remove` — **implemented baseline**
 - `models auth order get|set|clear` — **implemented baseline**
-- login note: `models auth login --provider openai-codex` now defaults to native device-code baseline (`--device-code-json`, optional `--poll`), with OpenClaw bridge available via `--bridge-import` (or legacy bridge flags)
+- login note: `models auth login --provider openai-codex` now supports native device-code start/poll baseline (`--device-code-json` optional; native start when omitted) with OpenClaw bridge available via `--bridge-import` (or legacy bridge flags)
 - `image-fallbacks list|add|remove|clear` — **implemented**
 
 ### Logs/System
@@ -139,16 +139,16 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - Where full OpenClaw feature equivalence is still impossible now, NexaClaw returns explicit diagnostics and scope limits instead of silent gaps.
 
 ### OAuth parity note
-- Native NexaClaw device-code login/poll baseline is implemented for `openai-codex`.
+- Native NexaClaw device-code start/login/poll baseline is implemented for `openai-codex`.
 - OpenClaw login/import bridge remains available for backward compatibility (`--bridge-import`).
-- Remaining gap: direct device-code *issuance/start* endpoint orchestration in NexaClaw (today baseline consumes provided device-code payload).
 
 ### Installer parity note
 - Added `scripts/install.sh` one-command installer (clone/update/build/install).
 - Supports `--dry-run`, `--pin-commit`, and `--system` for safer operational usage.
 
-## Stage 17 summary (slice 1)
-- Added native OAuth device-code baseline in NexaClaw for `models auth login --provider openai-codex`.
-- New non-interactive flags: `--device-code-json <json|@file>` and `--poll` (plus `--client-id`, `--token-url`).
+## Stage 17 summary (slice 2)
+- Added native OAuth device-code START acquisition endpoint flow in NexaClaw for `models auth login --provider openai-codex` when `--device-code-json` is omitted.
+- Added practical start flags/envs: `--device-start-url` / `OPENAI_CODEX_DEVICE_START_URL`, `--client-id` / `OPENAI_CODEX_CLIENT_ID`, `--scope` / `OPENAI_CODEX_SCOPE`.
+- Existing poll/store flow remains intact (`--poll`, `--token-url`), now interoperable with native start in the same command.
 - Legacy OpenClaw import path kept for compatibility and can be forced with `--bridge-import` (or legacy bridge flags).
-- Poll flow returns explicit JSON for retryable (`authorization_pending`, `slow_down`) and terminal errors.
+- Start and poll paths return explicit structured JSON for success/error automation.

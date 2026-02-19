@@ -19,9 +19,8 @@ json.dump(cfg, open(sys.argv[1], 'w'), indent=2)
 PY
 
 PORT=18999
-MOCK_PID_FILE="/tmp/nexaclaw-stage17-oauth-mock.pid"
 python3 - <<'PY' "$PORT" &
-import json,sys
+import json,sys,urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 port=int(sys.argv[1])
 class H(BaseHTTPRequestHandler):
@@ -30,44 +29,81 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         ln=int(self.headers.get('Content-Length','0'))
         body=self.rfile.read(ln).decode('utf-8','replace')
-        params={}
-        for kv in body.split('&'):
-            if '=' in kv:
-                k,v=kv.split('=',1)
-                params[k]=v
-        dc=params.get('device_code','')
-        if 'pending' in dc:
-            self.send_response(400)
+        params={k:v[0] for k,v in urllib.parse.parse_qs(body, keep_blank_values=True).items()}
+        if self.path == '/device/code':
+            cid=params.get('client_id','')
+            if cid == 'bad-client':
+                self.send_response(400)
+                self.send_header('Content-Type','application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error':'invalid_client','error_description':'bad client id'}).encode())
+                return
+            self.send_response(200)
             self.send_header('Content-Type','application/json')
             self.end_headers()
-            self.wfile.write(json.dumps({'error':'authorization_pending','error_description':'still waiting'}).encode())
+            self.wfile.write(json.dumps({
+                'device_code':'dc-started',
+                'user_code':'ZZZZ-YYYY',
+                'verification_uri':'https://example.test/verify',
+                'verification_uri_complete':'https://example.test/verify?user_code=ZZZZ-YYYY',
+                'interval':3,
+                'expires_in':600
+            }).encode())
             return
-        self.send_response(200)
-        self.send_header('Content-Type','application/json')
+        if self.path == '/token':
+            dc=params.get('device_code','')
+            if 'pending' in dc:
+                self.send_response(400)
+                self.send_header('Content-Type','application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error':'authorization_pending','error_description':'still waiting'}).encode())
+                return
+            self.send_response(200)
+            self.send_header('Content-Type','application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'access_token':'stage17-token','expires_in':1200,'token_type':'Bearer','scope':'model.read'}).encode())
+            return
+        self.send_response(404)
         self.end_headers()
-        self.wfile.write(json.dumps({'access_token':'stage17-token','expires_in':1200,'token_type':'Bearer','scope':'model.read'}).encode())
 
 HTTPServer(('127.0.0.1', port), H).serve_forever()
 PY
 MOCK_PID=$!
-echo "$MOCK_PID" > "$MOCK_PID_FILE"
 trap 'kill "$MOCK_PID" >/dev/null 2>&1 || true' EXIT
 sleep 0.2
 
-# 1) native mode should require device-code payload
-if "$BIN" models auth login --provider openai-codex --config "$CFG" >/tmp/nx-stage17-no-device.json 2>&1; then
-  echo "[FAIL] login without device code unexpectedly succeeded"
+START_URL="http://127.0.0.1:$PORT/device/code"
+TOKEN_URL="http://127.0.0.1:$PORT/token"
+
+# 1) native start-phase success when --device-code-json is omitted
+READY=$("$BIN" models auth login --provider openai-codex --client-id stage17-client --scope "model.read model.write" --device-start-url "$START_URL" --config "$CFG")
+echo "$READY" | grep -q '"phase": "device_code_ready"'
+echo "$READY" | grep -q '"device_code": "dc-started"'
+
+echo "$READY" >/tmp/nx-stage17-ready.json
+python3 - <<'PY'
+import json
+j=json.load(open('/tmp/nx-stage17-ready.json'))
+assert j['deviceCode']['verification_uri'] == 'https://example.test/verify'
+assert j['deviceCode']['interval'] == 3
+PY
+
+# 2) native start-phase structured error
+set +e
+"$BIN" models auth login --provider openai-codex --client-id bad-client --device-start-url "$START_URL" --config "$CFG" >/tmp/nx-stage17-start-error.json 2>&1
+RC=$?
+set -e
+if [[ "$RC" -eq 0 ]]; then
+  echo "[FAIL] expected start error to fail"
+  cat /tmp/nx-stage17-start-error.json
   exit 1
 fi
-grep -q 'Native device-code flow requires --device-code-json' /tmp/nx-stage17-no-device.json
+grep -q '"phase": "device_code_start"' /tmp/nx-stage17-start-error.json
+grep -q 'invalid_client' /tmp/nx-stage17-start-error.json
 
-# 2) native ready phase (non-poll)
-READY=$("$BIN" models auth login --provider openai-codex --device-code-json '{"device_code":"dc-success","user_code":"ABCD-EFGH","verification_uri":"https://example.test/verify","interval":4,"expires_in":900}' --config "$CFG")
-echo "$READY" | grep -q '"phase": "device_code_ready"'
-
-# 3) poll retryable error path
+# 3) poll retryable error path (provided device-code-json still works)
 set +e
-"$BIN" models auth login --provider openai-codex --device-code-json '{"device_code":"pending"}' --poll --client-id stage17-client --token-url "http://127.0.0.1:$PORT/token" --config "$CFG" >/tmp/nx-stage17-pending.json 2>&1
+"$BIN" models auth login --provider openai-codex --device-code-json '{"device_code":"pending"}' --poll --client-id stage17-client --token-url "$TOKEN_URL" --config "$CFG" >/tmp/nx-stage17-pending.json 2>&1
 RC=$?
 set -e
 if [[ "$RC" -ne 2 ]]; then
@@ -77,8 +113,8 @@ if [[ "$RC" -ne 2 ]]; then
 fi
 grep -q '"retryable": true' /tmp/nx-stage17-pending.json
 
-# 4) poll success -> stored profile
-OK=$("$BIN" models auth login --provider openai-codex --device-code-json '{"device_code":"dc-success"}' --poll --client-id stage17-client --token-url "http://127.0.0.1:$PORT/token" --profile-id stage17-native --config "$CFG")
+# 4) start->poll interoperability without --device-code-json
+OK=$("$BIN" models auth login --provider openai-codex --poll --client-id stage17-client --scope "model.read" --device-start-url "$START_URL" --token-url "$TOKEN_URL" --profile-id stage17-native --config "$CFG")
 echo "$OK" | grep -q '"ok": true'
 echo "$OK" | grep -q '"native": true'
 "$BIN" models auth list --config "$CFG" | grep -q 'stage17-native'
