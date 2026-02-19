@@ -1,4 +1,4 @@
-# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 19)
+# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 21)
 
 Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
@@ -27,8 +27,8 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `pairing` | list/approve/... | partial | `list`, `approve` |
 | `gateway` | status/start/stop/restart/call | partial | `status|start|stop|restart|health|call` baseline (local pid/log + RPC-like `gateway call`) |
 | `message` | send/... | partial | Stage 16 baseline: telegram `send|react|delete|poll` with strict target validation + dry-run |
-| `agent` | manage/ops | stub | not mapped yet |
-| `agents` | manage/ops | stub | not mapped yet |
+| `agent` | manage/ops | partial | Stage 21 baseline alias to `agents` family (`list/show/create/delete/use/run`) + structured stubs for unavailable subpaths |
+| `agents` | manage/ops | partial | Stage 21 baseline (`list/show/create/delete/use/run`) with file-backed registry + task/message/session fallback orchestration |
 | `acp` | protocol tooling | impossible-now | requires ACP ecosystem parity |
 | `approvals` | approvals workflow | stub | not mapped yet |
 | `channels` | channel providers mgmt | partial | telegram baseline: list/status/capabilities/resolve/add/remove |
@@ -97,6 +97,21 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - `channels capabilities` — **implemented baseline** (telegram static capability map)
 - `channels resolve --channel telegram <target>` — **implemented baseline**
 - `channels add/remove --channel telegram` — **implemented baseline** (config toggles)
+
+### Agent / Agents (Stage 21 baseline)
+- `agents list` — **implemented baseline**
+- `agents show <id>` — **implemented baseline**
+- `agents create <id> [--name] [--session-key]` — **implemented baseline**
+- `agents delete <id>` — **implemented baseline** (`main` protected)
+- `agents use <id>` — **implemented baseline** (active pointer)
+- `agents run [<id>|--agent <id>] --message <text>` — **implemented baseline**
+- `agent ...` — **implemented baseline alias family**
+- unsupported subpaths return structured JSON `not_implemented` stubs
+
+Orchestration path for `run`:
+1) `/api/tasks` (preferred),
+2) `/api/message` fallback,
+3) local session append fallback.
 
 ### Tools
 - `tools list` — **implemented**

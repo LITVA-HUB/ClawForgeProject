@@ -1,10 +1,10 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 20 slice 1 (native browser runtime fidelity uplift + capability-gated structured warnings).
+> Updated after Stage 21 (agent/agents baseline + practical orchestration uplift on existing task/session stack).
 
 ## Practical parity matrix
 
-| Area | OpenClaw | NexaClaw (Stage 19-s1) | Status | Notes |
+| Area | OpenClaw | NexaClaw (Stage 21) | Status | Notes |
 |---|---|---|---|---|
 | HTTP API `/health`, `/api/message`, `/api/status` | ✅ | ✅ | Closed | Stable local gateway |
 | Session store | ✅ | ✅ | Closed | File-backed sessions |
@@ -16,6 +16,7 @@
 | Security audit (`security audit [--deep] [--fix]`) | ✅ | ⚠️ | Partial (Stage 12 baseline) | dmScope/auth/perms checks + safe fixes |
 | Message command/action surface | ✅ | ⚠️ | Partial (Stage 16 baseline) | telegram `send/react/delete/poll` + strict target validation + dry-run |
 | Channels command family | ✅ | ⚠️ | Partial (Stage 15 baseline) | `channels list/status/capabilities/resolve/add/remove` (telegram baseline) |
+| Agent/agents command family | ✅ | ⚠️ | Partial (Stage 21 baseline) | `list/show/create/delete/use/run` + structured stubs for unsupported subpaths; run path uses tasks/message/session fallback |
 | Multi-model providers + aliases + fallbacks | ✅ | ✅ | Closed (baseline) | openai/anthropic/openrouter/gemini/minimax |
 | Models auth parity beyond API keys | ✅ | ⚠️ | Partial (Stage 17 slice 2) | Native device-code start/login/poll baseline for `openai-codex` + legacy OpenClaw import bridge fallback |
 | OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + explicit stubs for not-yet branches |
@@ -35,5 +36,5 @@ After Stage 20 slice 1, the heaviest remaining parity items are:
 
 1. Upgrade native browser backend from runtime-assisted baseline to true Playwright/CDP-attached control
 2. Channels multi-provider expansion (Discord/Slack/Signal/etc) beyond Telegram baseline
-3. `agents` / `agent` command-family baseline (list/add/delete/targeted runs)
+3. Deepen `agent/agents` from baseline into richer orchestration semantics (subagents, approvals, richer targeting)
 4. Multi-channel/plugin + nodes/canvas ecosystem parity

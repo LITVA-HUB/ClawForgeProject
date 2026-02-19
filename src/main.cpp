@@ -265,6 +265,262 @@ int runHealth(const std::string& configPath) {
   std::cout << remote->dump(2) << std::endl; return remote->value("ok", false) ? 0 : 1;
 }
 
+
+
+int64_t nowMillis() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
+
+std::filesystem::path agentsRegistryPath(const clawforge::core::AppConfig& cfg) {
+  return cfg.stateDir / "agents" / "agents.json";
+}
+
+bool validAgentId(const std::string& id) {
+  if (id.empty() || id.size() > 64) return false;
+  static const std::regex kId(R"(^[A-Za-z0-9._-]+$)");
+  return std::regex_match(id, kId);
+}
+
+json defaultAgentsRegistry() {
+  return json{{"version", 1},
+              {"active", "main"},
+              {"agents", json::array({json{{"id", "main"},
+                                             {"name", "Main"},
+                                             {"sessionKey", "main"},
+                                             {"createdAtMs", nowMillis()}}})}};
+}
+
+json normalizeAgentsRegistry(json reg) {
+  if (!reg.is_object()) reg = json::object();
+  if (!reg.contains("version")) reg["version"] = 1;
+  if (!reg.contains("agents") || !reg["agents"].is_array()) reg["agents"] = json::array();
+
+  bool hasMain = false;
+  json normalized = json::array();
+  std::set<std::string> seen;
+  for (const auto& row : reg["agents"]) {
+    const std::string id = row.value("id", "");
+    if (!validAgentId(id) || seen.count(id)) continue;
+    seen.insert(id);
+    json item = row;
+    if (!item.contains("name") || !item["name"].is_string()) item["name"] = id;
+    if (!item.contains("sessionKey") || !item["sessionKey"].is_string() || item["sessionKey"].get<std::string>().empty()) {
+      item["sessionKey"] = (id == "main" ? "main" : "agent:" + id);
+    }
+    if (!item.contains("createdAtMs")) item["createdAtMs"] = nowMillis();
+    normalized.push_back(item);
+    if (id == "main") hasMain = true;
+  }
+  if (!hasMain) {
+    normalized.push_back(json{{"id", "main"}, {"name", "Main"}, {"sessionKey", "main"}, {"createdAtMs", nowMillis()}});
+  }
+  reg["agents"] = normalized;
+
+  const std::string active = reg.value("active", "main");
+  bool activeExists = false;
+  for (const auto& row : reg["agents"]) if (row.value("id", "") == active) activeExists = true;
+  reg["active"] = activeExists ? active : "main";
+  return reg;
+}
+
+json loadAgentsRegistry(const clawforge::core::AppConfig& cfg) {
+  const auto path = agentsRegistryPath(cfg);
+  std::error_code ec;
+  std::filesystem::create_directories(path.parent_path(), ec);
+
+  json reg;
+  if (!std::filesystem::exists(path)) {
+    reg = defaultAgentsRegistry();
+    saveJsonFile(path.string(), reg);
+    return reg;
+  }
+
+  auto parsed = json::parse(clawforge::util::FileUtil::readText(path).value_or("{}"), nullptr, false);
+  if (parsed.is_discarded()) parsed = defaultAgentsRegistry();
+  reg = normalizeAgentsRegistry(parsed);
+  saveJsonFile(path.string(), reg);
+  return reg;
+}
+
+void saveAgentsRegistry(const clawforge::core::AppConfig& cfg, const json& reg) {
+  saveJsonFile(agentsRegistryPath(cfg).string(), normalizeAgentsRegistry(reg));
+}
+
+std::optional<json> findAgent(const json& reg, const std::string& id) {
+  if (!reg.contains("agents") || !reg["agents"].is_array()) return std::nullopt;
+  for (const auto& row : reg["agents"]) {
+    if (row.value("id", "") == id) return row;
+  }
+  return std::nullopt;
+}
+
+int printNotImplJson(const std::string& top, const std::string& sub, const std::vector<std::string>& available) {
+  std::cout << json{{"ok", false},
+                    {"error", "not_implemented"},
+                    {"command", top},
+                    {"subcommand", sub},
+                    {"available", available},
+                    {"note", "Compatibility stub: subcommand is not implemented in NexaClaw yet"}}
+                   .dump(2)
+            << std::endl;
+  return 2;
+}
+
+int runAgentsFamily(const std::string& configPath, const std::vector<std::string>& pos, const std::string& top) {
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  auto reg = loadAgentsRegistry(cfg);
+  const std::vector<std::string> available = {"list", "show", "create", "delete", "use", "run"};
+
+  std::string sub = "list";
+  if (pos.size() >= 2) sub = pos[1];
+
+  if (sub == "list") {
+    std::cout << json{{"ok", true}, {"command", top}, {"active", reg.value("active", "main")}, {"agents", reg["agents"]}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (sub == "show" || sub == "get") {
+    std::string id = pos.size() >= 3 ? pos[2] : reg.value("active", "main");
+    auto agent = findAgent(reg, id);
+    if (!agent.has_value()) {
+      std::cout << json{{"ok", false}, {"error", "agent_not_found"}, {"agentId", id}}.dump(2) << std::endl;
+      return 1;
+    }
+    std::cout << json{{"ok", true}, {"command", top}, {"active", reg.value("active", "main")}, {"agent", *agent}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (sub == "create" || sub == "add") {
+    if (pos.size() < 3) {
+      std::cout << json{{"ok", false}, {"error", "usage"}, {"usage", top + " create <agent-id> [--name <display-name>] [--session-key <session>]"}}.dump(2) << std::endl;
+      return 1;
+    }
+    const std::string id = pos[2];
+    if (!validAgentId(id)) {
+      std::cout << json{{"ok", false}, {"error", "invalid_agent_id"}, {"agentId", id}}.dump(2) << std::endl;
+      return 1;
+    }
+    if (findAgent(reg, id).has_value()) {
+      std::cout << json{{"ok", false}, {"error", "agent_exists"}, {"agentId", id}}.dump(2) << std::endl;
+      return 1;
+    }
+    const std::string name = argValue(pos, "--name").value_or(id);
+    const std::string sessionKey = argValue(pos, "--session-key").value_or("agent:" + id);
+    reg["agents"].push_back(json{{"id", id}, {"name", name}, {"sessionKey", sessionKey}, {"createdAtMs", nowMillis()}});
+    saveAgentsRegistry(cfg, reg);
+    std::cout << json{{"ok", true}, {"created", true}, {"agent", findAgent(reg, id).value()}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (sub == "delete" || sub == "rm" || sub == "remove") {
+    if (pos.size() < 3) {
+      std::cout << json{{"ok", false}, {"error", "usage"}, {"usage", top + " delete <agent-id>"}}.dump(2) << std::endl;
+      return 1;
+    }
+    const std::string id = pos[2];
+    if (id == "main") {
+      std::cout << json{{"ok", false}, {"error", "protected_agent"}, {"agentId", id}}.dump(2) << std::endl;
+      return 1;
+    }
+    json kept = json::array();
+    bool removed = false;
+    for (const auto& row : reg["agents"]) {
+      if (row.value("id", "") == id) {
+        removed = true;
+        continue;
+      }
+      kept.push_back(row);
+    }
+    if (!removed) {
+      std::cout << json{{"ok", false}, {"error", "agent_not_found"}, {"agentId", id}}.dump(2) << std::endl;
+      return 1;
+    }
+    reg["agents"] = kept;
+    if (reg.value("active", "main") == id) reg["active"] = "main";
+    saveAgentsRegistry(cfg, reg);
+    std::cout << json{{"ok", true}, {"deleted", true}, {"agentId", id}, {"active", reg.value("active", "main")}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (sub == "use") {
+    if (pos.size() < 3) {
+      std::cout << json{{"ok", false}, {"error", "usage"}, {"usage", top + " use <agent-id>"}}.dump(2) << std::endl;
+      return 1;
+    }
+    const std::string id = pos[2];
+    if (!findAgent(reg, id).has_value()) {
+      std::cout << json{{"ok", false}, {"error", "agent_not_found"}, {"agentId", id}}.dump(2) << std::endl;
+      return 1;
+    }
+    reg["active"] = id;
+    saveAgentsRegistry(cfg, reg);
+    std::cout << json{{"ok", true}, {"active", id}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (sub == "run") {
+    std::string id = argValue(pos, "--agent").value_or(reg.value("active", "main"));
+    if (pos.size() >= 3 && !pos[2].empty() && pos[2].rfind("--", 0) != 0) id = pos[2];
+    const auto agent = findAgent(reg, id);
+    if (!agent.has_value()) {
+      std::cout << json{{"ok", false}, {"error", "agent_not_found"}, {"agentId", id}}.dump(2) << std::endl;
+      return 1;
+    }
+    const auto message = argValue(pos, "--message");
+    if (!message.has_value() || message->empty()) {
+      std::cout << json{{"ok", false}, {"error", "usage"}, {"usage", top + " run [<agent-id>|--agent <id>] --message <text> [--timeout-ms <ms>]"}}.dump(2) << std::endl;
+      return 1;
+    }
+
+    const std::string base = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
+    int timeoutMs = 30000;
+    try {
+      timeoutMs = std::max(1000, std::stoi(argValue(pos, "--timeout-ms").value_or("30000")));
+    } catch (...) {
+      std::cout << json{{"ok", false}, {"error", "invalid_timeout_ms"}, {"value", argValue(pos, "--timeout-ms").value_or("")}}.dump(2) << std::endl;
+      return 1;
+    }
+    const auto remoteTask = httpPostJson(base + "/api/tasks", json{{"channel", "cli"},
+                                                                     {"peerId", "agent:" + id},
+                                                                     {"text", *message},
+                                                                     {"timeoutMs", timeoutMs}}, authHeaderFromEnv(cfg));
+    if (remoteTask.has_value() && remoteTask->value("ok", false)) {
+      json out = *remoteTask;
+      out["agent"] = *agent;
+      out["mode"] = "gateway-task";
+      std::cout << out.dump(2) << std::endl;
+      return 0;
+    }
+
+    const std::string sessionKey = agent->value("sessionKey", id == "main" ? "main" : "agent:" + id);
+    const auto remoteMsg = httpPostJson(base + "/api/message", json{{"sessionKey", sessionKey}, {"text", *message}}, authHeaderFromEnv(cfg));
+    if (remoteMsg.has_value() && remoteMsg->value("ok", false)) {
+      json out = *remoteMsg;
+      out["agent"] = *agent;
+      out["mode"] = "gateway-message";
+      std::cout << out.dump(2) << std::endl;
+      return 0;
+    }
+
+    clawforge::session::SessionStore sessions(cfg.stateDir);
+    sessions.init();
+    sessions.ensureSession(sessionKey);
+    sessions.appendMessage(sessionKey, "user", *message);
+    std::cout << json{{"ok", true},
+                      {"mode", "local-session"},
+                      {"queued", false},
+                      {"agent", *agent},
+                      {"sessionKey", sessionKey},
+                      {"note", "Gateway unavailable: stored as user message only"}}
+                     .dump(2)
+              << std::endl;
+    return 0;
+  }
+
+  return printNotImplJson(top, sub, available);
+}
 int runSessions(const std::string& configPath) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath); const auto remote = httpGetJson("http://" + cfg.http.host + ":" + std::to_string(cfg.http.port) + "/api/sessions", authHeaderFromEnv(cfg));
   if (remote.has_value() && remote->value("ok", false)) { std::cout << remote->dump(2) << std::endl; return 0; }
@@ -2253,6 +2509,10 @@ int main(int argc, char** argv) {
       return runChannelsAction(configPath, pos);
     }
 
+    if (command == "agent" || command == "agents") {
+      return runAgentsFamily(configPath, pos, command);
+    }
+
     if (command == "tools" && pos.size() >= 2 && pos[1] == "list") return runToolsList(configPath);
     if (command == "tools" && pos.size() >= 4 && pos[1] == "call" && pos[3] == "--json") return runToolsCall(configPath, pos[2], pos.size() >= 5 ? pos[4] : "{}");
     if (command == "logs" && pos.size() >= 2 && pos[1] == "tail") return runLogsTail(configPath, pos.size() >= 3 ? std::max(1, std::stoi(pos[2])) : 50);
@@ -2291,7 +2551,7 @@ int main(int argc, char** argv) {
       std::cerr << "Unknown image-fallbacks subcommand" << std::endl; return 1;
     }
 
-    std::set<std::string> compatTop = {"dashboard","reset","uninstall","update","agent","agents","acp","memory","nodes","devices","node","approvals","sandbox","dns","docs","hooks","webhooks","plugins","skills","tui","voicecall","directory"};
+    std::set<std::string> compatTop = {"dashboard","reset","uninstall","update","acp","memory","nodes","devices","node","approvals","sandbox","dns","docs","hooks","webhooks","plugins","skills","tui","voicecall","directory"};
     if (compatTop.count(command)) return (printCompatNotImplemented(command, lang), 2);
 
     if (command != "run") {

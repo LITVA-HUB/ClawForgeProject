@@ -289,6 +289,7 @@ scripts/benchmark_quick.sh 50
 ## Честные ограничения
 
 - `browser/snapshot` пока диагностический stub (без реального DOM/скриншота)
+- `agent/agents` CLI пока baseline-only (list/show/create/delete/use/run + детерминированный fallback tasks/message/session), это не полная parity orchestration OpenClaw
 - Telegram пока baseline, а не full multi-channel экосистема
 - Нет Canvas/Nodes интеграции
 - Нет полной внешней orchestration-модели subagents
