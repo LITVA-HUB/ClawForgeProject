@@ -1,6 +1,6 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 24 slice 2 (native browser runtime fidelity uplift).
+> Updated after Stage 25 slice 2 (nodes/canvas/devices practical runtime uplift).
 
 ## Practical parity matrix
 
@@ -26,7 +26,7 @@
 | Realtime events | ✅ | ✅ | Closed | SSE + EventBus |
 | Async task/job lane | ✅ | ⚠️ | Partial | internal queue, single worker |
 | Rate limiting + audit trail + recovery | ✅ | ✅ | Closed (baseline) | source RL, JSONL audit, task restore |
-| Canvas/Nodes/device control | ✅ | ⚠️ | Partial (Stage 22 slice 1 baseline) | CLI/API seed for `nodes|node|devices|canvas` with local safe registry + structured stubs where runtime unavailable |
+| Canvas/Nodes/device control | ✅ | ⚠️ | Partial (Stage 25 slice 2 practical uplift) | CLI/API surface now includes safe local runtime probe/invoke for nodes/devices and virtual canvas snapshot/invoke with capability-gated structured errors when runtime unavailable |
 | Multi-channel plugins (Discord/Slack/Signal/etc) | ✅ | ❌ | Open | Telegram-first baseline |
 | Advanced subagent orchestration | ✅ | ❌ | Open | no external runtime orchestration |
 

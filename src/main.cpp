@@ -1340,10 +1340,10 @@ std::optional<std::string> parseJsonArg(const std::vector<std::string>& pos) {
 
 json defaultNodesRegistry() {
   return json{{"nodes", json::array({json{{"id", "local-node"},
-                                           {"name", "Local Baseline Node"},
+                                           {"name", "Local Runtime Node"},
                                            {"platform", "darwin"},
                                            {"connected", true},
-                                           {"capabilities", json::array({"status", "describe", "invoke:read-safe", "canvas:status"})}}})}};
+                                           {"capabilities", json::array({"status", "describe", "invoke:read-safe", "runtime:probe", "canvas:status", "canvas:snapshot"})}}})}};
 }
 
 json loadNodesRegistry(const clawforge::core::AppConfig& cfg) {
@@ -1356,27 +1356,185 @@ json loadNodesRegistry(const clawforge::core::AppConfig& cfg) {
   return defaultNodesRegistry();
 }
 
+std::optional<json> findNodeById(const json& nodes, const std::string& id) {
+  for (const auto& n : nodes) if (n.value("id", "") == id) return n;
+  return std::nullopt;
+}
+
+bool nodeRuntimeAvailable(const json& node) {
+  return node.value("connected", false) && node.value("id", "") == "local-node";
+}
+
+json localRuntimeProbe() {
+  const auto uname = clawforge::util::Shell::run("uname -sm");
+  const auto whoami = clawforge::util::Shell::run("whoami");
+  const auto host = clawforge::util::Shell::run("hostname");
+  const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count();
+  return json{{"timestampSec", now},
+              {"host", host.exitCode == 0 ? host.output : ""},
+              {"user", whoami.exitCode == 0 ? whoami.output : ""},
+              {"platform", uname.exitCode == 0 ? uname.output : "unknown"},
+              {"cwd", std::filesystem::current_path().string()},
+              {"mode", "local-read-safe"}};
+}
+
+json nodeRuntimeUnavailable(const std::string& method, const std::string& node, const std::string& action, const std::string& reason) {
+  return json{{"ok", false},
+              {"method", method},
+              {"node", node},
+              {"action", action},
+              {"error", "node_runtime_unavailable"},
+              {"reason", reason},
+              {"readSafeOnly", true},
+              {"capabilityGate", json{{"feature", "node.runtime"}, {"available", false}}}};
+}
+
+json devicesFromRegistry(const json& reg) {
+  json devices = json::array();
+  for (const auto& n : reg.value("nodes", json::array())) {
+    devices.push_back(json{{"id", n.value("id", "")},
+                           {"name", n.value("name", "")},
+                           {"online", n.value("connected", false)},
+                           {"type", "paired-node"},
+                           {"runtime", json{{"available", nodeRuntimeAvailable(n)}, {"mode", nodeRuntimeAvailable(n) ? "local-read-safe" : "unavailable"}}}});
+  }
+  return devices;
+}
+
+json devicesMethod(const clawforge::core::AppConfig& cfg, const std::string& method, const json& params) {
+  const auto reg = loadNodesRegistry(cfg);
+  const auto devices = devicesFromRegistry(reg);
+
+  if (method == "devices.list") {
+    return json{{"ok", true}, {"method", method}, {"devices", devices}, {"count", devices.size()}, {"baseline", false}, {"stage", "stage25-slice2"}};
+  }
+
+  if (method == "devices.status") {
+    size_t online = 0;
+    for (const auto& d : devices) if (d.value("online", false)) ++online;
+    return json{{"ok", true},
+                {"method", method},
+                {"status", json{{"total", devices.size()}, {"online", online}, {"offline", devices.size() - online}}},
+                {"baseline", false},
+                {"stage", "stage25-slice2"}};
+  }
+
+  if (method == "devices.invoke") {
+    const std::string id = params.value("device", params.value("id", std::string("local-node")));
+    const std::string action = params.value("action", std::string("status"));
+    const auto node = findNodeById(reg.value("nodes", json::array()), id);
+    if (!node.has_value()) return json{{"ok", false}, {"method", method}, {"error", "device_not_found"}, {"device", id}};
+    if (!nodeRuntimeAvailable(*node)) return json{{"ok", false},
+                                                  {"method", method},
+                                                  {"device", id},
+                                                  {"action", action},
+                                                  {"error", "device_runtime_unavailable"},
+                                                  {"readSafeOnly", true}};
+    if (action == "status" || action == "probe" || action == "metrics") {
+      return json{{"ok", true},
+                  {"method", method},
+                  {"device", id},
+                  {"action", action},
+                  {"runtime", localRuntimeProbe()},
+                  {"readSafeOnly", true},
+                  {"stage", "stage25-slice2"}};
+    }
+    return json{{"ok", false},
+                {"method", method},
+                {"device", id},
+                {"action", action},
+                {"error", "device_action_not_allowed"},
+                {"readSafeOnly", true},
+                {"allowedActions", json::array({"status", "probe", "metrics"})}};
+  }
+
+  return json{{"ok", false}, {"method", method}, {"error", "unsupported_devices_method"}};
+}
+
+json canvasMethod(const clawforge::core::AppConfig& cfg, const std::string& method, const json& params) {
+  const auto reg = loadNodesRegistry(cfg);
+  const auto node = findNodeById(reg.value("nodes", json::array()), params.value("node", std::string("local-node")));
+  const bool available = node.has_value() && nodeRuntimeAvailable(*node);
+
+  if (method == "canvas.status") {
+    return json{{"ok", true},
+                {"method", method},
+                {"canvas", json{{"available", available},
+                                 {"mode", available ? "local-read-safe" : "baseline-stub"},
+                                 {"reason", available ? "runtime_ready" : "runtime_not_configured"},
+                                 {"supported", json::array({"status", "list", "snapshot", "invoke"})},
+                                 {"invokeActions", json::array({"present", "hide", "navigate", "snapshot"})}}},
+                {"readSafe", true},
+                {"stage", "stage25-slice2"}};
+  }
+
+  if (method == "canvas.snapshot") {
+    if (!available) {
+      return json{{"ok", false}, {"method", method}, {"error", "canvas_runtime_unavailable"}, {"readSafeOnly", true}, {"hint", "Connect local-node runtime"}};
+    }
+    return json{{"ok", true},
+                {"method", method},
+                {"snapshot", json{{"kind", "virtual"}, {"node", "local-node"}, {"runtime", localRuntimeProbe()}, {"contentHash", hashText(localRuntimeProbe().dump())}}},
+                {"readSafe", true},
+                {"stage", "stage25-slice2"}};
+  }
+
+  if (method == "canvas.invoke") {
+    const std::string action = params.value("action", std::string("snapshot"));
+    if (!available) return json{{"ok", false}, {"method", method}, {"action", action}, {"error", "canvas_runtime_unavailable"}, {"readSafeOnly", true}};
+    if (action == "snapshot" || action == "status") return canvasMethod(cfg, "canvas.snapshot", params);
+    if (action == "present" || action == "hide" || action == "navigate") {
+      return json{{"ok", true},
+                  {"method", method},
+                  {"action", action},
+                  {"invoke", json{{"executed", true}, {"readSafe", true}, {"note", "modeled-runtime-action"}}},
+                  {"runtime", localRuntimeProbe()},
+                  {"stage", "stage25-slice2"}};
+    }
+    return json{{"ok", false},
+                {"method", method},
+                {"action", action},
+                {"error", "canvas_action_not_allowed"},
+                {"readSafeOnly", true},
+                {"allowedActions", json::array({"present", "hide", "navigate", "snapshot", "status"})}};
+  }
+
+  return json{{"ok", false}, {"method", method}, {"error", "unsupported_canvas_method"}};
+}
+
 json nodesMethod(const clawforge::core::AppConfig& cfg, const std::string& method, const json& params) {
   const auto reg = loadNodesRegistry(cfg);
-  const auto nodes = reg.value("nodes", json::array());
+  auto nodes = reg.value("nodes", json::array());
+
+  for (auto& n : nodes) {
+    n["runtime"] = json{{"available", nodeRuntimeAvailable(n)},
+                         {"mode", nodeRuntimeAvailable(n) ? "local-read-safe" : "unavailable"},
+                         {"allowedActions", json::array({"status", "describe", "probe", "health"})}};
+  }
 
   if (method == "nodes.list") {
-    return json{{"ok", true}, {"method", method}, {"nodes", nodes}, {"count", nodes.size()}, {"baseline", true}};
+    return json{{"ok", true}, {"method", method}, {"nodes", nodes}, {"count", nodes.size()}, {"baseline", false}, {"stage", "stage25-slice2"}};
   }
 
   if (method == "nodes.status") {
     size_t connected = 0;
-    for (const auto& n : nodes) if (n.value("connected", false)) ++connected;
+    size_t runtimeReady = 0;
+    for (const auto& n : nodes) {
+      if (n.value("connected", false)) ++connected;
+      if (n.contains("runtime") && n["runtime"].value("available", false)) ++runtimeReady;
+    }
     return json{{"ok", true},
                 {"method", method},
-                {"status", json{{"total", nodes.size()}, {"connected", connected}, {"disconnected", nodes.size() - connected}}},
-                {"baseline", true}};
+                {"status", json{{"total", nodes.size()}, {"connected", connected}, {"disconnected", nodes.size() - connected}, {"runtimeReady", runtimeReady}}},
+                {"baseline", false},
+                {"stage", "stage25-slice2"}};
   }
 
   if (method == "nodes.describe") {
     const std::string id = params.value("node", params.value("id", std::string("local-node")));
     for (const auto& n : nodes) {
-      if (n.value("id", "") == id) return json{{"ok", true}, {"method", method}, {"node", n}, {"baseline", true}};
+      if (n.value("id", "") == id) return json{{"ok", true}, {"method", method}, {"node", n}, {"baseline", false}, {"stage", "stage25-slice2"}};
     }
     return json{{"ok", false}, {"method", method}, {"error", "node_not_found"}, {"node", id}};
   }
@@ -1384,20 +1542,26 @@ json nodesMethod(const clawforge::core::AppConfig& cfg, const std::string& metho
   if (method == "nodes.invoke") {
     const std::string id = params.value("node", params.value("id", std::string("local-node")));
     const std::string action = params.value("action", std::string("status"));
-    if (action == "status" || action == "list" || action == "describe") {
+    const auto node = findNodeById(reg.value("nodes", json::array()), id);
+    if (!node.has_value()) return json{{"ok", false}, {"method", method}, {"error", "node_not_found"}, {"node", id}};
+    if (!nodeRuntimeAvailable(*node)) return nodeRuntimeUnavailable(method, id, action, "node disconnected or non-local runtime");
+
+    if (action == "status" || action == "describe" || action == "probe" || action == "health") {
       return json{{"ok", true},
                   {"method", method},
                   {"node", id},
                   {"action", action},
-                  {"invoke", json{{"readSafe", true}, {"executed", false}, {"result", "baseline-noop"}}},
-                  {"baseline", true}};
+                  {"invoke", json{{"readSafe", true}, {"executed", true}, {"result", "runtime-probe"}, {"runtime", localRuntimeProbe()}}},
+                  {"baseline", false},
+                  {"stage", "stage25-slice2"}};
     }
     return json{{"ok", false},
                 {"method", method},
                 {"node", id},
                 {"action", action},
-                {"error", "invoke_not_available_in_baseline"},
-                {"readSafeOnly", true}};
+                {"error", "node_action_not_allowed"},
+                {"readSafeOnly", true},
+                {"allowedActions", json::array({"status", "describe", "probe", "health"})}};
   }
 
   return json{{"ok", false}, {"method", method}, {"error", "unsupported_nodes_method"}};
@@ -1441,34 +1605,21 @@ int runNodesFamily(const std::string& configPath, const std::vector<std::string>
 int runDevicesFamily(const std::string& configPath, const std::vector<std::string>& pos) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
   const std::string sub = pos.size() >= 2 ? pos[1] : "list";
-  const auto reg = loadNodesRegistry(cfg);
-  json devices = json::array();
-  for (const auto& n : reg.value("nodes", json::array())) {
-    devices.push_back(json{{"id", n.value("id", "")}, {"name", n.value("name", "")}, {"online", n.value("connected", false)}, {"type", "paired-node"}});
-  }
 
   if (sub == "list") {
-    std::cout << json{{"ok", true}, {"devices", devices}, {"count", devices.size()}, {"baseline", true}}.dump(2) << std::endl;
+    std::cout << devicesMethod(cfg, "devices.list", json::object()).dump(2) << std::endl;
     return 0;
   }
   if (sub == "status") {
-    size_t online = 0;
-    for (const auto& d : devices) if (d.value("online", false)) ++online;
-    std::cout << json{{"ok", true}, {"status", json{{"total", devices.size()}, {"online", online}}}, {"baseline", true}}.dump(2) << std::endl;
+    std::cout << devicesMethod(cfg, "devices.status", json::object()).dump(2) << std::endl;
     return 0;
   }
   if (sub == "invoke") {
     const std::string id = argValue(pos, "--device").value_or("local-node");
     const std::string action = argValue(pos, "--action").value_or("status");
-    const bool allowed = (action == "status" || action == "list");
-    const auto out = json{{"ok", allowed},
-                          {"device", id},
-                          {"action", action},
-                          {"baseline", true},
-                          {"readSafeOnly", true},
-                          {"error", allowed ? "" : "invoke_not_available_in_baseline"}};
+    const auto out = devicesMethod(cfg, "devices.invoke", json{{"device", id}, {"action", action}});
     std::cout << out.dump(2) << std::endl;
-    return allowed ? 0 : 2;
+    return out.value("ok", false) ? 0 : 2;
   }
 
   std::cout << json{{"ok", false}, {"error", "not_implemented"}, {"supported", json::array({"list", "status", "invoke"})}}.dump(2) << std::endl;
@@ -1477,25 +1628,22 @@ int runDevicesFamily(const std::string& configPath, const std::vector<std::strin
 
 int runCanvasFamily(const std::string& configPath, const std::vector<std::string>& pos) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
-  (void)cfg;
   const std::string sub = pos.size() >= 2 ? pos[1] : "status";
+
   if (sub == "status" || sub == "list") {
-    std::cout << json{{"ok", true},
-                      {"canvas", json{{"available", false}, {"mode", "baseline-stub"}, {"reason", "runtime_not_configured"}}},
-                      {"readSafe", true}}
-                     .dump(2)
-              << std::endl;
+    std::cout << canvasMethod(cfg, "canvas.status", json::object()).dump(2) << std::endl;
     return 0;
   }
-  if (sub == "snapshot" || sub == "invoke") {
-    std::cout << json{{"ok", false},
-                      {"error", "canvas_runtime_unavailable"},
-                      {"subcommand", sub},
-                      {"readSafeOnly", true},
-                      {"hint", "Use canvas status/list in baseline mode"}}
-                     .dump(2)
-              << std::endl;
-    return 2;
+  if (sub == "snapshot") {
+    const auto out = canvasMethod(cfg, "canvas.snapshot", json::object());
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 2;
+  }
+  if (sub == "invoke") {
+    const std::string action = argValue(pos, "--action").value_or("snapshot");
+    const auto out = canvasMethod(cfg, "canvas.invoke", json{{"action", action}});
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 2;
   }
   std::cout << json{{"ok", false}, {"error", "not_implemented"}, {"supported", json::array({"status", "list", "snapshot", "invoke"})}}.dump(2)
             << std::endl;
@@ -2438,23 +2586,18 @@ int runGatewayCall(const std::string& configPath, const std::vector<std::string>
     return out.value("ok", false) ? 0 : (out.value("error", "") == "invoke_not_available_in_baseline" ? 2 : 1);
   }
 
-  if (method == "devices.list") {
+  if (method == "devices.list" || method == "devices.status" || method == "devices.invoke") {
     const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
-    const auto reg = loadNodesRegistry(cfg);
-    json devices = json::array();
-    for (const auto& n : reg.value("nodes", json::array())) devices.push_back(json{{"id", n.value("id", "")}, {"name", n.value("name", "")}, {"online", n.value("connected", false)}});
-    std::cout << json{{"ok", true}, {"method", method}, {"devices", devices}, {"baseline", true}}.dump(2) << std::endl;
-    return 0;
+    const auto out = devicesMethod(cfg, method, params);
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 2;
   }
 
-  if (method == "canvas.status") {
-    std::cout << json{{"ok", true}, {"method", method}, {"canvas", json{{"available", false}, {"mode", "baseline-stub"}}}}.dump(2) << std::endl;
-    return 0;
-  }
-
-  if (method == "canvas.invoke") {
-    std::cout << json{{"ok", false}, {"method", method}, {"error", "canvas_runtime_unavailable"}, {"readSafeOnly", true}}.dump(2) << std::endl;
-    return 2;
+  if (method == "canvas.status" || method == "canvas.invoke" || method == "canvas.snapshot") {
+    const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+    const auto out = canvasMethod(cfg, method, params);
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 2;
   }
 
   if (method == "logs.tail") {

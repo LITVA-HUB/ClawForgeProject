@@ -255,6 +255,7 @@ scripts/smoke_stage19_admin_dashboard.sh
 scripts/smoke_stage21_agents.sh
 scripts/smoke_stage22_nodes_canvas_devices.sh
 scripts/smoke_stage23_control_plane_slice1.sh
+scripts/smoke_stage25_nodes_runtime_slice2.sh
 
 # строгая сборка (warning == error)
 cmake -S . -B build_warnings -DCMAKE_CXX_FLAGS='-Wall -Wextra -Wpedantic -Werror'
@@ -296,7 +297,7 @@ scripts/benchmark_quick.sh 50
 - Browser parity имеет нативный baseline backend (`browser.backend=native`) для core command/API flow, включая моделирование GET form-submit side effects и structured capability gates; для реальной browser automation parity остаётся `browser.backend=openclaw_cli`
 - `agent/agents` CLI пока baseline-only (list/show/create/delete/use/run + детерминированный fallback tasks/message/session), это не полная parity orchestration OpenClaw
 - Telegram пока baseline, а не full multi-channel экосистема
-- Canvas/Nodes/Devices пока только в Stage 22 slice 1 baseline (безопасный локальный registry + structured stubs; без полного runtime-control)
+- Canvas/Nodes/Devices получили Stage 25 slice 2 practical uplift: локальный read-safe runtime probe/invoke, virtual canvas snapshot и явные capability-gated ошибки при недоступном runtime
 - Нет полной внешней orchestration-модели subagents
 
 Актуальный статус смотри в [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md).

@@ -13,6 +13,23 @@ if ! command -v openclaw >/dev/null 2>&1; then
   exit 0
 fi
 
+if ! python3 - <<'PY'
+import subprocess,sys
+try:
+    cp = subprocess.run(["openclaw","browser","status","--json"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=6)
+    # treat explicit onboarding/runtime bootstrap prompts as unavailable in CI/smoke env
+    out=(cp.stdout+cp.stderr).decode('utf-8','ignore').lower()
+    if cp.returncode != 0 and ('onboard' in out or 'setup' in out or 'login' in out):
+        sys.exit(1)
+except Exception:
+    sys.exit(1)
+sys.exit(0)
+PY
+then
+  echo "Stage16 smoke: SKIP (openclaw browser runtime unavailable/non-interactive)"
+  exit 0
+fi
+
 run_browser_retry() {
   local attempts="$1"; shift
   local sleep_s="$1"; shift
