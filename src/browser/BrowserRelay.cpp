@@ -233,6 +233,8 @@ void BrowserRelay::nativeLoadStateLocked() const {
     t.title = item.value("title", "");
     t.html = item.value("html", "");
     t.runtime.source = item.value("runtimeSource", "");
+    t.viewportWidth = item.value("viewportWidth", 0);
+    t.viewportHeight = item.value("viewportHeight", 0);
     if (item.contains("runtimeWarning") && item["runtimeWarning"].is_object()) {
       t.runtime.warning = item["runtimeWarning"];
     }
@@ -296,6 +298,8 @@ void BrowserRelay::nativeSaveStateLocked() const {
                        {"url", t.url},
                        {"title", t.title},
                        {"html", t.html},
+                       {"viewportWidth", t.viewportWidth},
+                       {"viewportHeight", t.viewportHeight},
                        {"runtimeSource", t.runtime.source},
                        {"runtimeWarning", t.runtime.warning.is_object() ? t.runtime.warning : nlohmann::json::object()},
                        {"refs", refs},
@@ -336,7 +340,7 @@ nlohmann::json BrowserRelay::nativeStatus() const {
           {"diagnosticMode", false},
           {"targets", nativeTargets_.size()},
           {"activeTargetId", nativeLastTargetId_},
-          {"capabilities", {"status", "open", "navigate", "snapshot", "click", "type", "screenshot"}},
+          {"capabilities", {"status", "open", "navigate", "snapshot", "click", "type", "screenshot", "act.click", "act.type", "act.press", "act.wait", "act.close", "act.hover", "act.scrollIntoView", "act.fill", "act.resize"}},
           {"nativeRuntime",
            {{"httpFetch", nativeHttpFetchAvailable()},
             {"parsedUrlSchemes", {"data:text/html", "http", "https"}},
@@ -535,6 +539,8 @@ nlohmann::json BrowserRelay::nativeOpen(const std::string& url) const {
   ++nativeCounter_;
   t.targetId = "native-" + std::to_string(nativeCounter_);
   t.url = url;
+  t.viewportWidth = 1280;
+  t.viewportHeight = 720;
   applyNativeRuntimeContent(t);
   rebuildRefs(t);
 
@@ -635,6 +641,7 @@ nlohmann::json BrowserRelay::nativeSnapshot(const std::string& urlHint, const st
                      {"targetId", resolvedTargetId},
                      {"url", it->second.url},
                      {"title", it->second.title},
+                     {"viewport", {{"width", it->second.viewportWidth}, {"height", it->second.viewportHeight}}},
                      {"refs", refs},
                      {"elements", refs.size()},
                      {"runtime", {{"source", it->second.runtime.source}}}};
@@ -1050,14 +1057,25 @@ nlohmann::json BrowserRelay::screenshot(const std::string& targetId, bool fullPa
 
 nlohmann::json BrowserRelay::nativeAct(const nlohmann::json& request, const std::string& targetId) const {
   const std::string kind = request.value("kind", "");
+  const std::string resolvedTargetId = targetId.empty() ? request.value("targetId", "") : targetId;
   if (kind.empty()) {
     return {{"ok", false}, {"error", "kind is required"}, {"code", "browser_act_kind_required"}};
   }
 
+  auto capabilityError = [&](const std::string& feature, const std::string& message, const std::string& code) {
+    return nlohmann::json{{"ok", false},
+                          {"action", "act"},
+                          {"kind", kind},
+                          {"targetId", resolvedTargetId},
+                          {"error", message},
+                          {"code", code},
+                          {"capabilityGate", {{"feature", feature}, {"backend", "native"}}}};
+  };
+
   if (kind == "click") {
     const std::string ref = request.value("ref", "");
     const bool doubleClick = request.value("doubleClick", false);
-    auto out = nativeClick(ref, targetId.empty() ? request.value("targetId", "") : targetId, doubleClick);
+    auto out = nativeClick(ref, resolvedTargetId, doubleClick);
     out["action"] = "act";
     out["kind"] = kind;
     return out;
@@ -1068,7 +1086,7 @@ nlohmann::json BrowserRelay::nativeAct(const nlohmann::json& request, const std:
     const std::string text = request.value("text", "");
     const bool submit = request.value("submit", false);
     const bool slowly = request.value("slowly", false);
-    auto out = nativeType(ref, text, targetId.empty() ? request.value("targetId", "") : targetId, submit, slowly);
+    auto out = nativeType(ref, text, resolvedTargetId, submit, slowly);
     out["action"] = "act";
     out["kind"] = kind;
     return out;
@@ -1079,34 +1097,119 @@ nlohmann::json BrowserRelay::nativeAct(const nlohmann::json& request, const std:
     if (key.empty()) {
       return {{"ok", false}, {"error", "key is required"}, {"code", "browser_act_key_required"}, {"kind", kind}};
     }
-    if (key == "Enter") {
-      const std::string id = targetId.empty() ? request.value("targetId", "") : targetId;
-      std::lock_guard<std::mutex> lock(nativeMu_);
-      nativeLoadStateLocked();
-      auto it = id.empty() ? nativeTargets_.end() : nativeTargets_.find(id);
-      if (it == nativeTargets_.end() && !nativeLastTargetId_.empty()) it = nativeTargets_.find(nativeLastTargetId_);
-      if (it == nativeTargets_.end()) return {{"ok", false}, {"error", "no active target"}, {"code", "browser_act_no_active_target"}, {"kind", kind}};
-      if (!it->second.forms.empty()) {
-        const auto firstForm = it->second.forms.begin()->first;
-        auto out = nativeSubmitFormLocked(it->second, firstForm, "", it->second.targetId, "press:Enter");
-        out["action"] = "act";
-        out["kind"] = kind;
-        return out;
-      }
+    if (key != "Enter") {
+      return capabilityError("press", "native backend supports only Enter key in act.press", "native_capability_press_key_unsupported");
     }
-    return {{"ok", true}, {"action", "act"}, {"kind", kind}, {"targetId", targetId.empty() ? request.value("targetId", "") : targetId}, {"noop", true}, {"note", "native backend currently models Enter form submit only"}};
+
+    std::lock_guard<std::mutex> lock(nativeMu_);
+    nativeLoadStateLocked();
+    auto it = resolvedTargetId.empty() ? nativeTargets_.end() : nativeTargets_.find(resolvedTargetId);
+    if (it == nativeTargets_.end() && !nativeLastTargetId_.empty()) it = nativeTargets_.find(nativeLastTargetId_);
+    if (it == nativeTargets_.end()) {
+      return {{"ok", false}, {"error", "no active target"}, {"code", "browser_act_no_active_target"}, {"kind", kind}};
+    }
+    if (it->second.forms.empty()) {
+      return {{"ok", true},
+              {"action", "act"},
+              {"kind", kind},
+              {"targetId", it->second.targetId},
+              {"noop", true},
+              {"note", "Enter press has no form to submit in native backend"}};
+    }
+
+    const auto firstForm = it->second.forms.begin()->first;
+    auto out = nativeSubmitFormLocked(it->second, firstForm, "", it->second.targetId, "press:Enter");
+    out["action"] = "act";
+    out["kind"] = kind;
+    nativeSaveStateLocked();
+    return out;
   }
 
   if (kind == "wait") {
     const int timeMs = request.value("timeMs", 0);
-    return {{"ok", true}, {"action", "act"}, {"kind", kind}, {"waitedMs", timeMs > 0 ? timeMs : 0}, {"nativeMode", "no-op"}};
+    return {{"ok", true}, {"action", "act"}, {"kind", kind}, {"waitedMs", timeMs > 0 ? timeMs : 0}, {"nativeMode", "documented-noop"}};
+  }
+
+  if (kind == "close") {
+    std::lock_guard<std::mutex> lock(nativeMu_);
+    nativeLoadStateLocked();
+    std::string id = resolvedTargetId.empty() ? nativeLastTargetId_ : resolvedTargetId;
+    if (id.empty() || nativeTargets_.count(id) == 0) {
+      return {{"ok", false}, {"error", "targetId not found"}, {"code", "target_not_found"}, {"targetId", id}, {"kind", kind}};
+    }
+    nativeTargets_.erase(id);
+    if (nativeLastTargetId_ == id) nativeLastTargetId_ = nativeTargets_.empty() ? "" : nativeTargets_.begin()->first;
+    nativeSaveStateLocked();
+    return {{"ok", true}, {"action", "act"}, {"kind", kind}, {"targetId", id}, {"closed", true}};
+  }
+
+  if (kind == "hover" || kind == "scrollIntoView") {
+    const std::string ref = request.value("ref", "");
+    if (ref.empty()) return {{"ok", false}, {"error", "ref is required"}, {"code", "ref_required"}, {"kind", kind}};
+    std::lock_guard<std::mutex> lock(nativeMu_);
+    nativeLoadStateLocked();
+    auto it = nativeTargets_.find(resolvedTargetId);
+    if (resolvedTargetId.empty() || it == nativeTargets_.end()) {
+      return {{"ok", false}, {"error", "targetId not found"}, {"code", "target_not_found"}, {"targetId", resolvedTargetId}, {"kind", kind}};
+    }
+    if (it->second.refs.count(ref) == 0) {
+      return {{"ok", false}, {"error", "ref not found"}, {"code", "ref_not_found"}, {"ref", ref}, {"kind", kind}};
+    }
+    nativeLastTargetId_ = resolvedTargetId;
+    nativeSaveStateLocked();
+    return {{"ok", true}, {"action", "act"}, {"kind", kind}, {"targetId", resolvedTargetId}, {"ref", ref}, {kind == "hover" ? "hovered" : "scrolledIntoView", true}};
+  }
+
+  if (kind == "fill") {
+    if (!request.contains("fields") || !request["fields"].is_array()) {
+      return {{"ok", false}, {"kind", kind}, {"code", "browser_act_fill_fields_required"}, {"error", "fields[] is required"}};
+    }
+    for (const auto& f : request["fields"]) {
+      const std::string ref = f.is_object() ? f.value("ref", "") : "";
+      if (ref.empty()) return {{"ok", false}, {"kind", kind}, {"code", "browser_act_fill_field_ref_required"}, {"error", "each field must include ref"}};
+      std::string value;
+      if (f.contains("value")) {
+        if (f["value"].is_string()) value = f["value"].get<std::string>();
+        else if (f["value"].is_number_integer()) value = std::to_string(f["value"].get<long long>());
+        else if (f["value"].is_number_float()) value = std::to_string(f["value"].get<double>());
+        else if (f["value"].is_boolean()) value = f["value"].get<bool>() ? "true" : "false";
+      }
+      auto typed = nativeType(ref, value, resolvedTargetId, false, false);
+      if (!typed.value("ok", false)) {
+        typed["action"] = "act";
+        typed["kind"] = kind;
+        return typed;
+      }
+    }
+    return {{"ok", true}, {"action", "act"}, {"kind", kind}, {"targetId", resolvedTargetId}, {"filled", request["fields"].size()}};
+  }
+
+  if (kind == "resize") {
+    const int w = request.value("width", 0);
+    const int h = request.value("height", 0);
+    if (w <= 0 || h <= 0) return {{"ok", false}, {"kind", kind}, {"code", "browser_act_resize_dimensions_required"}, {"error", "width and height must be positive"}};
+    std::lock_guard<std::mutex> lock(nativeMu_);
+    nativeLoadStateLocked();
+    auto it = nativeTargets_.find(resolvedTargetId);
+    if (resolvedTargetId.empty() || it == nativeTargets_.end()) {
+      return {{"ok", false}, {"error", "targetId not found"}, {"code", "target_not_found"}, {"targetId", resolvedTargetId}, {"kind", kind}};
+    }
+    it->second.viewportWidth = w;
+    it->second.viewportHeight = h;
+    nativeLastTargetId_ = resolvedTargetId;
+    nativeSaveStateLocked();
+    return {{"ok", true}, {"action", "act"}, {"kind", kind}, {"targetId", resolvedTargetId}, {"viewport", {{"width", w}, {"height", h}}}};
+  }
+
+  if (kind == "drag" || kind == "select" || kind == "evaluate") {
+    return capabilityError(kind, "native backend does not implement this act kind", "native_capability_kind_unsupported");
   }
 
   return {{"ok", false},
           {"action", "act"},
           {"kind", kind},
           {"error", "native_browser_act_kind_unsupported"},
-          {"supportedKinds", {"click", "type", "press", "wait"}},
+          {"supportedKinds", {"click", "type", "press", "wait", "close", "hover", "scrollIntoView", "fill", "resize"}},
           {"hint", "Use browser.backend=openclaw_cli for full Playwright-style act support"}};
 }
 
@@ -1125,24 +1228,90 @@ nlohmann::json BrowserRelay::act(const nlohmann::json& request, const std::strin
   }
 
   if (useOpenClawCli()) {
+    const std::string resolvedTargetId = targetId.empty() ? request.value("targetId", "") : targetId;
     if (kind == "click") {
-      return click(request.value("ref", ""), targetId.empty() ? request.value("targetId", "") : targetId,
-                   request.value("doubleClick", false));
+      return click(request.value("ref", ""), resolvedTargetId, request.value("doubleClick", false));
     }
     if (kind == "type") {
-      return type(request.value("ref", ""), request.value("text", ""),
-                  targetId.empty() ? request.value("targetId", "") : targetId,
+      return type(request.value("ref", ""), request.value("text", ""), resolvedTargetId,
                   request.value("submit", false), request.value("slowly", false));
     }
+    if (kind == "press") {
+      const std::string key = request.value("key", "");
+      if (key.empty()) return {{"ok", false}, {"action", "act"}, {"kind", kind}, {"error", "key is required"}, {"code", "browser_act_key_required"}};
+      std::vector<std::string> args{"press", key};
+      if (!resolvedTargetId.empty()) { args.push_back("--target-id"); args.push_back(resolvedTargetId); }
+      if (request.contains("delayMs") && request["delayMs"].is_number_integer()) { args.push_back("--delay"); args.push_back(std::to_string(request["delayMs"].get<int>())); }
+      auto out = runOpenClawBrowser(args); out["action"] = "act"; out["kind"] = kind; return out;
+    }
+    if (kind == "hover") {
+      std::vector<std::string> args{"hover", request.value("ref", "")};
+      if (!resolvedTargetId.empty()) { args.push_back("--target-id"); args.push_back(resolvedTargetId); }
+      auto out = runOpenClawBrowser(args); out["action"] = "act"; out["kind"] = kind; return out;
+    }
+    if (kind == "scrollIntoView") {
+      std::vector<std::string> args{"scrollintoview", request.value("ref", "")};
+      if (!resolvedTargetId.empty()) { args.push_back("--target-id"); args.push_back(resolvedTargetId); }
+      auto out = runOpenClawBrowser(args); out["action"] = "act"; out["kind"] = kind; return out;
+    }
+    if (kind == "drag") {
+      std::vector<std::string> args{"drag", request.value("startRef", ""), request.value("endRef", "")};
+      if (!resolvedTargetId.empty()) { args.push_back("--target-id"); args.push_back(resolvedTargetId); }
+      auto out = runOpenClawBrowser(args); out["action"] = "act"; out["kind"] = kind; return out;
+    }
+    if (kind == "select") {
+      std::vector<std::string> args{"select", request.value("ref", "")};
+      if (request.contains("values") && request["values"].is_array()) {
+        for (const auto& v : request["values"]) if (v.is_string()) args.push_back(v.get<std::string>());
+      }
+      if (!resolvedTargetId.empty()) { args.push_back("--target-id"); args.push_back(resolvedTargetId); }
+      auto out = runOpenClawBrowser(args); out["action"] = "act"; out["kind"] = kind; return out;
+    }
+    if (kind == "fill") {
+      if (!request.contains("fields") || !request["fields"].is_array()) {
+        return {{"ok", false}, {"action", "act"}, {"kind", kind}, {"code", "browser_act_fill_fields_required"}, {"error", "fields[] is required"}};
+      }
+      std::vector<std::string> args{"fill", "--fields", request["fields"].dump()};
+      if (!resolvedTargetId.empty()) { args.push_back("--target-id"); args.push_back(resolvedTargetId); }
+      auto out = runOpenClawBrowser(args); out["action"] = "act"; out["kind"] = kind; return out;
+    }
+    if (kind == "resize") {
+      const int w = request.value("width", 0); const int h = request.value("height", 0);
+      if (w <= 0 || h <= 0) return {{"ok", false}, {"action", "act"}, {"kind", kind}, {"code", "browser_act_resize_dimensions_required"}, {"error", "width and height must be positive"}};
+      std::vector<std::string> args{"resize", std::to_string(w), std::to_string(h)};
+      if (!resolvedTargetId.empty()) { args.push_back("--target-id"); args.push_back(resolvedTargetId); }
+      auto out = runOpenClawBrowser(args); out["action"] = "act"; out["kind"] = kind; return out;
+    }
+    if (kind == "evaluate") {
+      const std::string fn = request.value("fn", "");
+      if (fn.empty()) return {{"ok", false}, {"action", "act"}, {"kind", kind}, {"code", "browser_act_evaluate_fn_required"}, {"error", "fn is required"}};
+      std::vector<std::string> args{"evaluate", "--fn", fn};
+      if (request.contains("ref") && request["ref"].is_string() && !request["ref"].get<std::string>().empty()) { args.push_back("--ref"); args.push_back(request["ref"].get<std::string>()); }
+      if (!resolvedTargetId.empty()) { args.push_back("--target-id"); args.push_back(resolvedTargetId); }
+      auto out = runOpenClawBrowser(args); out["action"] = "act"; out["kind"] = kind; return out;
+    }
     if (kind == "wait") {
-      return {{"ok", true}, {"action", "act"}, {"kind", kind}, {"nativeMode", "passthrough-noop"}};
+      std::vector<std::string> args{"wait"};
+      if (request.contains("timeMs") && request["timeMs"].is_number_integer()) { args.push_back("--time"); args.push_back(std::to_string(request["timeMs"].get<int>())); }
+      if (request.contains("text") && request["text"].is_string()) { args.push_back("--text"); args.push_back(request["text"].get<std::string>()); }
+      if (request.contains("textGone") && request["textGone"].is_string()) { args.push_back("--text-gone"); args.push_back(request["textGone"].get<std::string>()); }
+      if (request.contains("selector") && request["selector"].is_string()) { args.push_back("--selector"); args.push_back(request["selector"].get<std::string>()); }
+      if (request.contains("url") && request["url"].is_string()) { args.push_back("--url"); args.push_back(request["url"].get<std::string>()); }
+      if (request.contains("loadState") && request["loadState"].is_string()) { args.push_back("--load-state"); args.push_back(request["loadState"].get<std::string>()); }
+      if (request.contains("fn") && request["fn"].is_string()) { args.push_back("--fn"); args.push_back(request["fn"].get<std::string>()); }
+      if (!resolvedTargetId.empty()) { args.push_back("--target-id"); args.push_back(resolvedTargetId); }
+      auto out = runOpenClawBrowser(args); out["action"] = "act"; out["kind"] = kind; return out;
+    }
+    if (kind == "close") {
+      std::vector<std::string> args{"close"};
+      if (!resolvedTargetId.empty()) args.push_back(resolvedTargetId);
+      auto out = runOpenClawBrowser(args); out["action"] = "act"; out["kind"] = kind; return out;
     }
     return {{"ok", false},
             {"action", "act"},
             {"kind", kind},
             {"error", "openclaw_cli_act_kind_unsupported_in_nexaclaw"},
-            {"supportedKinds", {"click", "type", "wait"}},
-            {"hint", "Use browser click/type directly or native backend for Enter press modeling"}};
+            {"supportedKinds", {"click", "type", "press", "hover", "scrollIntoView", "drag", "select", "fill", "resize", "wait", "evaluate", "close"}}};
   }
 
   return {{"ok", false}, {"error", "act is not implemented for backend: " + config_.backend}};

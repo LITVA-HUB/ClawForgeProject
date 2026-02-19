@@ -73,7 +73,7 @@ if "$BIN" browser act --json '{"kind":"drag","startRef":"e1","endRef":"e2"}' --t
   echo "[FAIL] act drag unexpectedly succeeded"
   exit 1
 fi
-grep -q '"error": "native_browser_act_kind_unsupported"' /tmp/nexaclaw-stage26-act-bad-kind.json
+grep -Eq '"error": "native_browser_act_kind_unsupported"|"code": "native_capability_kind_unsupported"' /tmp/nexaclaw-stage26-act-bad-kind.json
 
 GW=$($BIN gateway call browser.act --params '{"request":{"kind":"wait","timeMs":1}}' --config "$CFG")
 echo "$GW" | grep -q '"ok": true'

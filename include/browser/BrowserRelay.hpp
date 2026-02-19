@@ -57,6 +57,8 @@ class BrowserRelay {
     std::string url;
     std::string title;
     std::string html;
+    int viewportWidth{0};
+    int viewportHeight{0};
     NativeRuntime runtime;
     std::map<std::string, NativeRef> refs;
     std::map<std::string, NativeForm> forms;
