@@ -391,6 +391,15 @@ $('toggleAuto').onclick=()=>{paused=!paused;$('toggleAuto').textContent=paused?'
     replyJson(res, result, result.value("ok", false) ? 200 : 400);
   });
 
+  server_.Post("/api/browser/act", [&](const httplib::Request& req, httplib::Response& res) {
+    const auto body = parseBody(req);
+    if (body.is_discarded()) return replyJson(res, {{"ok", false}, {"error", "Invalid JSON"}}, 400);
+    const auto request = body.contains("request") && body["request"].is_object() ? body["request"] : body;
+    const auto result = browser_.act(request, body.value("targetId", ""));
+    audit_.write("browser_act", {{"ok", result.value("ok", false)}, {"kind", request.value("kind", "")}});
+    replyJson(res, result, result.value("ok", false) ? 200 : 400);
+  });
+
   server_.Post("/api/message", [&](const httplib::Request& req, httplib::Response& res) {
     const auto body = parseBody(req);
     if (body.is_discarded()) return replyJson(res, {{"ok", false}, {"error", "Invalid JSON"}}, 400);

@@ -220,7 +220,7 @@ bool ensureConfigFile(const std::string& configPath, std::string& error) {
 void printHelp(const std::string& lang) {
   const bool ru = (lang == "ru");
   std::cout << (ru ? "NexaClaw CLI (alias: clawforge)\n\n" : "NexaClaw CLI (alias: clawforge)\n\n");
-  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw setup|onboard|configure [--wizard|--non-interactive]\n  nexaclaw gateway run|status|start|stop|restart|probe|call\n  nexaclaw security audit [--deep] [--fix]\n  nexaclaw cron status|list|get|add|edit|enable|disable|run|runs|validate|rm\n  nexaclaw browser status|open|navigate|snapshot|click|type|screenshot\n  nexaclaw nodes|node list|status|describe|invoke\n  nexaclaw devices list|status|invoke\n  nexaclaw canvas status|list|snapshot|invoke\n  nexaclaw message send|react|delete|poll --channel telegram ...\n  nexaclaw channels list|status|capabilities|resolve|add|remove\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|login|paste-token|setup-token|use|remove\n  nexaclaw models auth order get|set|clear --provider <name>\n";
+  std::cout << "Usage:\n  nexaclaw [run] [--config <path>]\n  nexaclaw status|health|doctor|sessions\n  nexaclaw setup|onboard|configure [--wizard|--non-interactive]\n  nexaclaw gateway run|status|start|stop|restart|probe|call\n  nexaclaw security audit [--deep] [--fix]\n  nexaclaw cron status|list|get|add|edit|enable|disable|run|runs|validate|rm\n  nexaclaw browser status|open|navigate|snapshot|click|type|screenshot|act\n  nexaclaw nodes|node list|status|describe|invoke\n  nexaclaw devices list|status|invoke\n  nexaclaw canvas status|list|snapshot|invoke\n  nexaclaw message send|react|delete|poll --channel telegram ...\n  nexaclaw channels list|status|capabilities|resolve|add|remove\n  nexaclaw tools list\n  nexaclaw pairing list|approve <code>\n  nexaclaw config get <key>|set <key> <value>\n  nexaclaw models list|status|probe|set <provider/model|alias>\n  nexaclaw models aliases list|add|remove\n  nexaclaw models fallbacks list|add|remove|clear\n  nexaclaw models auth list|add|login|paste-token|setup-token|use|remove\n  nexaclaw models auth order get|set|clear --provider <name>\n";
   std::cout << (ru ? "\nСовместимость OpenClaw: неизвестные top-level ветки отдаются как compatibility stub вместо unknown (см. docs/CLI_PARITY.md).\n"
                    : "\nOpenClaw compatibility: unknown top-level branches return compatibility stubs instead of hard unknown (see docs/CLI_PARITY.md).\n");
 }
@@ -1781,6 +1781,32 @@ int runBrowserScreenshot(const std::string& configPath, const std::vector<std::s
   return out.value("ok", false) ? 0 : 1;
 }
 
+int runBrowserAct(const std::string& configPath, const std::vector<std::string>& pos) {
+  const std::string payloadRaw = argValue(pos, "--json").value_or("");
+  if (payloadRaw.empty()) {
+    std::cerr << "Usage: browser act --json '{\"kind\":\"click\",...}' [--target-id <id>]" << std::endl;
+    return 1;
+  }
+  auto req = json::parse(payloadRaw, nullptr, false);
+  if (req.is_discarded() || !req.is_object()) {
+    std::cerr << "Invalid JSON payload for --json" << std::endl;
+    return 1;
+  }
+  const std::string targetId = argValue(pos, "--target-id").value_or("");
+
+  const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+  const std::string baseUrl = "http://" + cfg.http.host + ":" + std::to_string(cfg.http.port);
+  const auto remote = httpPostJson(baseUrl + "/api/browser/act",
+                                   json{{"targetId", targetId}, {"request", req}},
+                                   authHeaderFromEnv(cfg));
+  if (remote.has_value()) { std::cout << remote->dump(2) << std::endl; return remote->value("ok", false) ? 0 : 1; }
+
+  clawforge::browser::BrowserRelay relay(cfg.browser);
+  const auto out = relay.act(req, targetId);
+  std::cout << out.dump(2) << std::endl;
+  return out.value("ok", false) ? 0 : 1;
+}
+
 int runCronAction(const std::string& configPath, const std::string& action,
                   const std::string& arg = "", const std::string& arg2 = "") {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
@@ -2600,6 +2626,15 @@ int runGatewayCall(const std::string& configPath, const std::vector<std::string>
     return out.value("ok", false) ? 0 : 2;
   }
 
+  if (method == "browser.act") {
+    const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
+    clawforge::browser::BrowserRelay relay(cfg.browser);
+    const auto req = params.contains("request") && params["request"].is_object() ? params["request"] : params;
+    const auto out = relay.act(req, params.value("targetId", ""));
+    std::cout << out.dump(2) << std::endl;
+    return out.value("ok", false) ? 0 : 2;
+  }
+
   if (method == "logs.tail") {
     const int lines = std::max(1, params.value("lines", params.value("limit", 50)));
     const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
@@ -2885,6 +2920,7 @@ int main(int argc, char** argv) {
     if (command == "browser" && pos.size() >= 3 && pos[1] == "click") return runBrowserClick(configPath, pos);
     if (command == "browser" && pos.size() >= 4 && pos[1] == "type") return runBrowserType(configPath, pos);
     if (command == "browser" && pos.size() >= 2 && pos[1] == "screenshot") return runBrowserScreenshot(configPath, pos);
+    if (command == "browser" && pos.size() >= 2 && pos[1] == "act") return runBrowserAct(configPath, pos);
     if (command == "cron" && pos.size() >= 2 && pos[1] == "status") return runCronAction(configPath, "status");
     if (command == "cron" && pos.size() >= 2 && pos[1] == "list") return runCronAction(configPath, "list");
     if (command == "cron" && pos.size() >= 3 && (pos[1] == "get" || pos[1] == "show")) return runCronAction(configPath, "get", pos[2]);

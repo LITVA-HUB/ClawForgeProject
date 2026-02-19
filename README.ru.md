@@ -153,7 +153,7 @@ bash scripts/install.sh --validate
 - `models list|status|set|aliases|fallbacks|probe|set-image`
 - `models auth list|add|login|paste-token|setup-token|use|remove` + `models auth order get|set|clear`
 - `image-fallbacks list|add|remove|clear`
-- `browser status|open|navigate|snapshot|click|type|screenshot` (Stage 16 baseline через `openclaw_cli`)
+- `browser status|open|navigate|snapshot|click|type|screenshot|act` (Stage 26: базовый OpenClaw-совместимый `act` envelope + безопасное native-подмножество)
 - `config get/set` (расширено покрытие ключей)
 - `logs tail`, `system event`, `pairing list|approve`
 - `message send --channel telegram --target ... --message ...` (baseline со строгой валидацией target)

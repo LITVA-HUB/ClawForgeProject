@@ -26,6 +26,7 @@ class BrowserRelay {
                       bool slowly = false) const;
   nlohmann::json screenshot(const std::string& targetId = "", bool fullPage = false,
                             const std::string& type = "png") const;
+  nlohmann::json act(const nlohmann::json& request, const std::string& targetId = "") const;
 
  public:
   struct NativeRef {
@@ -85,6 +86,7 @@ class BrowserRelay {
                             const std::string& targetId, bool submit, bool slowly) const;
   nlohmann::json nativeScreenshot(const std::string& targetId, bool fullPage,
                                   const std::string& type) const;
+  nlohmann::json nativeAct(const nlohmann::json& request, const std::string& targetId) const;
   nlohmann::json nativeSubmitFormLocked(NativeTarget& t, const std::string& formId,
                                         const std::string& triggerRef, const std::string& targetId,
                                         const std::string& trigger) const;

@@ -1048,4 +1048,104 @@ nlohmann::json BrowserRelay::screenshot(const std::string& targetId, bool fullPa
           {"hint", "Use browser.backend=openclaw_cli"}};
 }
 
+nlohmann::json BrowserRelay::nativeAct(const nlohmann::json& request, const std::string& targetId) const {
+  const std::string kind = request.value("kind", "");
+  if (kind.empty()) {
+    return {{"ok", false}, {"error", "kind is required"}, {"code", "browser_act_kind_required"}};
+  }
+
+  if (kind == "click") {
+    const std::string ref = request.value("ref", "");
+    const bool doubleClick = request.value("doubleClick", false);
+    auto out = nativeClick(ref, targetId.empty() ? request.value("targetId", "") : targetId, doubleClick);
+    out["action"] = "act";
+    out["kind"] = kind;
+    return out;
+  }
+
+  if (kind == "type") {
+    const std::string ref = request.value("ref", "");
+    const std::string text = request.value("text", "");
+    const bool submit = request.value("submit", false);
+    const bool slowly = request.value("slowly", false);
+    auto out = nativeType(ref, text, targetId.empty() ? request.value("targetId", "") : targetId, submit, slowly);
+    out["action"] = "act";
+    out["kind"] = kind;
+    return out;
+  }
+
+  if (kind == "press") {
+    const std::string key = request.value("key", "");
+    if (key.empty()) {
+      return {{"ok", false}, {"error", "key is required"}, {"code", "browser_act_key_required"}, {"kind", kind}};
+    }
+    if (key == "Enter") {
+      const std::string id = targetId.empty() ? request.value("targetId", "") : targetId;
+      std::lock_guard<std::mutex> lock(nativeMu_);
+      nativeLoadStateLocked();
+      auto it = id.empty() ? nativeTargets_.end() : nativeTargets_.find(id);
+      if (it == nativeTargets_.end() && !nativeLastTargetId_.empty()) it = nativeTargets_.find(nativeLastTargetId_);
+      if (it == nativeTargets_.end()) return {{"ok", false}, {"error", "no active target"}, {"code", "browser_act_no_active_target"}, {"kind", kind}};
+      if (!it->second.forms.empty()) {
+        const auto firstForm = it->second.forms.begin()->first;
+        auto out = nativeSubmitFormLocked(it->second, firstForm, "", it->second.targetId, "press:Enter");
+        out["action"] = "act";
+        out["kind"] = kind;
+        return out;
+      }
+    }
+    return {{"ok", true}, {"action", "act"}, {"kind", kind}, {"targetId", targetId.empty() ? request.value("targetId", "") : targetId}, {"noop", true}, {"note", "native backend currently models Enter form submit only"}};
+  }
+
+  if (kind == "wait") {
+    const int timeMs = request.value("timeMs", 0);
+    return {{"ok", true}, {"action", "act"}, {"kind", kind}, {"waitedMs", timeMs > 0 ? timeMs : 0}, {"nativeMode", "no-op"}};
+  }
+
+  return {{"ok", false},
+          {"action", "act"},
+          {"kind", kind},
+          {"error", "native_browser_act_kind_unsupported"},
+          {"supportedKinds", {"click", "type", "press", "wait"}},
+          {"hint", "Use browser.backend=openclaw_cli for full Playwright-style act support"}};
+}
+
+nlohmann::json BrowserRelay::act(const nlohmann::json& request, const std::string& targetId) const {
+  if (!config_.enabled) {
+    return {{"ok", false}, {"error", "browser relay disabled in config.browser.enabled"}};
+  }
+
+  const std::string kind = request.value("kind", "");
+  if (kind.empty()) {
+    return {{"ok", false}, {"error", "kind is required"}, {"code", "browser_act_kind_required"}};
+  }
+
+  if (useNativeBackend()) {
+    return nativeAct(request, targetId);
+  }
+
+  if (useOpenClawCli()) {
+    if (kind == "click") {
+      return click(request.value("ref", ""), targetId.empty() ? request.value("targetId", "") : targetId,
+                   request.value("doubleClick", false));
+    }
+    if (kind == "type") {
+      return type(request.value("ref", ""), request.value("text", ""),
+                  targetId.empty() ? request.value("targetId", "") : targetId,
+                  request.value("submit", false), request.value("slowly", false));
+    }
+    if (kind == "wait") {
+      return {{"ok", true}, {"action", "act"}, {"kind", kind}, {"nativeMode", "passthrough-noop"}};
+    }
+    return {{"ok", false},
+            {"action", "act"},
+            {"kind", kind},
+            {"error", "openclaw_cli_act_kind_unsupported_in_nexaclaw"},
+            {"supportedKinds", {"click", "type", "wait"}},
+            {"hint", "Use browser click/type directly or native backend for Enter press modeling"}};
+  }
+
+  return {{"ok", false}, {"error", "act is not implemented for backend: " + config_.backend}};
+}
+
 }  // namespace clawforge::browser

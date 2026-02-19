@@ -21,7 +21,7 @@
 | Models auth parity beyond API keys | ✅ | ⚠️ | Partial (Stage 17 slice 2) | Native device-code start/login/poll baseline for `openai-codex` + legacy OpenClaw import bridge fallback |
 | OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + explicit stubs for not-yet branches |
 | Telegram channel baseline | ✅ | ⚠️ | Partial | polling+pairing, no webhooks/sharding |
-| Browser relay endpoints | ✅ | ⚠️ | Partial (Stage 24 slice 2 uplift) | Native backend now includes runtime form-submit modeling for GET flows (`type --submit` / submit-control click), plus capability-gated structured errors for unsupported submit methods; `openclaw_cli` remains fallback for full automation |
+| Browser relay endpoints | ✅ | ⚠️ | Partial (Stage 26 act slice uplift) | Added OpenClaw-style `act` envelope at API/CLI/gateway levels (`/api/browser/act`, `browser act --json`, `gateway call browser.act`) with structured errors and native safe subset (`click/type/press(wait)`); full Playwright/CDP fidelity still open |
 | Browser admin dashboard | ✅ | ⚠️ | Partial (Stage 19 slice 2 polished) | `/admin` operator console UX (KPIs, refresh controls, denser sessions/cron visibility), enriched `/api/admin/overview`, safe cron quick-actions (`run due`/enable/disable), logs/audit tail |
 | Realtime events | ✅ | ✅ | Closed | SSE + EventBus |
 | Async task/job lane | ✅ | ⚠️ | Partial | internal queue, single worker |

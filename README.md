@@ -153,7 +153,7 @@ NexaClaw Stage 10 provides practical CLI parity for high-value OpenClaw flows.
 - `models list|status|set|aliases|fallbacks|probe|set-image`
 - `models auth list|add|login|paste-token|setup-token|use|remove` + `models auth order get|set|clear`
 - `image-fallbacks list|add|remove|clear`
-- `browser status|open|navigate|snapshot|click|type|screenshot` (Stage 18 baseline via `native` backend + `openclaw_cli` compatibility fallback)
+- `browser status|open|navigate|snapshot|click|type|screenshot|act` (Stage 26 slice: OpenClaw-style `act` envelope baseline + native safe subset)
 - `config get/set` (expanded key coverage)
 - `logs tail`, `system event`, `pairing list|approve`
 - `message send|react|delete|poll --channel telegram ...` (strict target validation + dry-run baseline)

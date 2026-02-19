@@ -19,6 +19,7 @@ scripts/smoke_stage21_agents.sh >/dev/null
 scripts/smoke_stage22_nodes_canvas_devices.sh >/dev/null
 scripts/smoke_stage23_control_plane_slice1.sh >/dev/null
 scripts/smoke_stage25_nodes_runtime_slice2.sh >/dev/null
+scripts/smoke_stage26_browser_act.sh >/dev/null
 
 BIN="${BIN:-./build/nexaclaw}"
 if [[ ! -x "$BIN" && -x ./build/clawforge ]]; then

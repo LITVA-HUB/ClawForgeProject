@@ -1,4 +1,4 @@
-# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 25 slice 2)
+# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 26 browser act slice)
 
 Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
@@ -58,7 +58,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
 ## Key subcommand parity details
 
-### Browser (Stage 24 native slice2 runtime fidelity uplift)
+### Browser (Stage 26 source-driven act parity slice)
 - `browser status` — **implemented**
 - `browser open <url>` — **implemented**
 - `browser navigate <url>` — **implemented**
@@ -66,9 +66,13 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - `browser click <ref>` — **implemented baseline**
 - `browser type <ref> <text>` — **implemented baseline**
 - `browser screenshot [targetId]` — **implemented baseline**
+- `browser act --json '{...}' [--target-id <id>]` — **implemented partial**
 - stage24 slice2 uplift: native runtime now parses basic HTML form context and models GET-form submission side effects (`type --submit` and submit-control `click`) into navigation URLs, closer to real automation runtime behavior
 - stage24 capability gates: non-GET form submits return structured `native_capability_form_method_unsupported` errors with machine-readable capability metadata; non-text `type` calls return structured `native_type_ref_not_text_input`
 - prior native parity improvements retained: stable target lifecycle (`activeTargetId`), deterministic ref stability across snapshots, type/click state effects visible in snapshot flow, safer persisted state writes, runtime-aware loading for `data:` + `http(s)` (via `curl`) with structured warning codes
+- stage26 parity slice: added `/api/browser/act`, `gateway call browser.act`, and CLI `browser act --json` with OpenClaw-compatible request envelope (`request.kind/ref/text/...`)
+- native `act` currently supports `click`, `type`, `press` (Enter form-submit modeling), and `wait` (no-op timing model); unsupported kinds return structured `native_browser_act_kind_unsupported` with `supportedKinds`
+- openclaw_cli backend maps `act` to existing `click/type` paths and returns explicit structured errors for unsupported kinds (`openclaw_cli_act_kind_unsupported_in_nexaclaw`)
 - limitation: native backend is still not full CDP/Playwright control (no full JS runtime/CDP sessions); use `browser.backend=openclaw_cli` when real OpenClaw browser automation is required
 
 ### Cron (Stage 23 control-plane uplift on top of Stage 14 baseline)
