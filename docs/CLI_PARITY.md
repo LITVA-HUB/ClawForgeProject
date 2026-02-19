@@ -58,7 +58,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
 ## Key subcommand parity details
 
-### Browser (Stage 16 baseline)
+### Browser (Stage 18 native slice2)
 - `browser status` — **implemented**
 - `browser open <url>` — **implemented**
 - `browser navigate <url>` — **implemented**
@@ -66,7 +66,8 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - `browser click <ref>` — **implemented baseline**
 - `browser type <ref> <text>` — **implemented baseline**
 - `browser screenshot [targetId]` — **implemented baseline**
-- limitation: native backend is currently a deterministic diagnostic baseline (not full CDP/Playwright control yet); use `browser.backend=openclaw_cli` when real OpenClaw browser automation is required
+- native parity improvements (slice2): stable target lifecycle (`activeTargetId`), stronger deterministic ref stability across snapshots, type/click state effects visible in snapshot flow, and safer persisted state writes
+- limitation: native backend is still deterministic emulation (not full CDP/Playwright control); use `browser.backend=openclaw_cli` when real OpenClaw browser automation is required
 
 ### Cron (Stage 14 semantic baseline)
 - `cron status` — **implemented**

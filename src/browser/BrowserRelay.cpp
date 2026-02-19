@@ -1,8 +1,11 @@
 #include "browser/BrowserRelay.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <regex>
 #include <sstream>
 #include <vector>
 
@@ -19,8 +22,44 @@ std::string normalizeBackend(std::string backend) {
   return backend;
 }
 
-std::filesystem::path nativeStatePath() {
-  return std::filesystem::temp_directory_path() / "nexaclaw-native-browser-state.json";
+std::string shortHash(const std::string& s) {
+  const auto h = std::hash<std::string>{}(s);
+  std::ostringstream os;
+  os << std::hex << h;
+  return os.str();
+}
+
+std::string lowerCopy(std::string s) {
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return s;
+}
+
+std::string trim(std::string s) {
+  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
+  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
+  return s;
+}
+
+std::string collapseWhitespace(std::string s) {
+  std::string out;
+  out.reserve(s.size());
+  bool space = false;
+  for (char c : s) {
+    if (std::isspace(static_cast<unsigned char>(c))) {
+      if (!space) out.push_back(' ');
+      space = true;
+    } else {
+      out.push_back(c);
+      space = false;
+    }
+  }
+  return trim(out);
+}
+
+std::filesystem::path nativeStatePathFor(const core::BrowserConfig& cfg) {
+  const std::string key = cfg.backend + "|" + cfg.profile + "|" + cfg.cliBinary + "|" + cfg.openCommand;
+  return std::filesystem::temp_directory_path() /
+         ("nexaclaw-native-browser-state-" + shortHash(key) + ".json");
 }
 
 std::string decodeDataHtml(const std::string& url) {
@@ -48,6 +87,17 @@ std::string decodeDataHtml(const std::string& url) {
     }
   }
   return out;
+}
+
+std::string stripTags(const std::string& s) {
+  return std::regex_replace(s, std::regex("<[^>]*>"), " ");
+}
+
+std::string attrValue(const std::string& attrs, const std::string& key) {
+  const std::regex rx("(?:^|\\s)" + key + "\\s*=\\s*(['\"])(.*?)\\1", std::regex::icase);
+  std::smatch m;
+  if (std::regex_search(attrs, m, rx) && m.size() >= 3) return collapseWhitespace(m[2].str());
+  return "";
 }
 
 }  // namespace
@@ -112,13 +162,15 @@ nlohmann::json BrowserRelay::runOpenClawBrowser(const std::vector<std::string>& 
 void BrowserRelay::nativeLoadStateLocked() const {
   nativeTargets_.clear();
   nativeCounter_ = 0;
+  nativeLastTargetId_.clear();
 
-  std::ifstream in(nativeStatePath());
+  std::ifstream in(nativeStatePathFor(config_));
   if (!in) return;
   auto j = nlohmann::json::parse(in, nullptr, false);
   if (j.is_discarded() || !j.is_object()) return;
 
   nativeCounter_ = j.value("counter", 0);
+  nativeLastTargetId_ = j.value("lastTargetId", "");
   const auto& targets = j["targets"];
   if (!targets.is_array()) return;
   for (const auto& item : targets) {
@@ -135,6 +187,9 @@ void BrowserRelay::nativeLoadStateLocked() const {
         r.role = it.value().value("role", "");
         r.name = it.value().value("name", "");
         r.text = it.value().value("text", "");
+        r.tag = it.value().value("tag", "");
+        r.href = it.value().value("href", "");
+        r.signature = it.value().value("signature", "");
         t.refs[it.key()] = r;
       }
     }
@@ -152,7 +207,12 @@ void BrowserRelay::nativeSaveStateLocked() const {
   for (const auto& [id, t] : nativeTargets_) {
     nlohmann::json refs = nlohmann::json::object();
     for (const auto& [refId, ref] : t.refs) {
-      refs[refId] = {{"role", ref.role}, {"name", ref.name}, {"text", ref.text}};
+      refs[refId] = {{"role", ref.role},
+                     {"name", ref.name},
+                     {"text", ref.text},
+                     {"tag", ref.tag},
+                     {"href", ref.href},
+                     {"signature", ref.signature}};
     }
     nlohmann::json typed = nlohmann::json::object();
     for (const auto& [refId, value] : t.typedValues) typed[refId] = value;
@@ -164,9 +224,28 @@ void BrowserRelay::nativeSaveStateLocked() const {
                        {"typedValues", typed}});
   }
 
-  std::ofstream out(nativeStatePath(), std::ios::trunc);
+  const auto dst = nativeStatePathFor(config_);
+  const auto tmp = dst.string() + ".tmp";
+  std::ofstream out(tmp, std::ios::trunc);
   if (!out) return;
-  out << nlohmann::json{{"counter", nativeCounter_}, {"targets", targets}}.dump(2) << "\n";
+  out << nlohmann::json{{"counter", nativeCounter_},
+                        {"lastTargetId", nativeLastTargetId_},
+                        {"targets", targets}}
+             .dump(2)
+      << "\n";
+  out.close();
+
+  std::error_code ec;
+  std::filesystem::rename(tmp, dst, ec);
+  if (ec) {
+    std::ofstream fallback(dst, std::ios::trunc);
+    if (!fallback) return;
+    fallback << nlohmann::json{{"counter", nativeCounter_},
+                               {"lastTargetId", nativeLastTargetId_},
+                               {"targets", targets}}
+                    .dump(2)
+             << "\n";
+  }
 }
 
 nlohmann::json BrowserRelay::nativeStatus() const {
@@ -175,50 +254,140 @@ nlohmann::json BrowserRelay::nativeStatus() const {
   return {{"ok", true},
           {"enabled", config_.enabled},
           {"backend", "native"},
-          {"diagnosticMode", true},
+          {"diagnosticMode", false},
           {"targets", nativeTargets_.size()},
+          {"activeTargetId", nativeLastTargetId_},
           {"capabilities", {"status", "open", "navigate", "snapshot", "click", "type", "screenshot"}},
-          {"limitations",
-           {"Baseline local native backend without external openclaw CLI.",
-            "Snapshot/interaction is deterministic diagnostic emulation, not full browser automation."}}};
+          {"limitations", {"Native backend is deterministic emulation and not a full browser engine."}}};
+}
+
+static void rebuildRefs(BrowserRelay::NativeTarget& t) {
+  std::vector<std::pair<std::string, BrowserRelay::NativeRef>> parsed;
+  parsed.push_back({"doc", {"document", t.title.empty() ? "document" : t.title, "", "document", "", "document"}});
+
+  if (t.url.find("example.com") != std::string::npos) {
+    parsed.push_back({"a|More information...|https://www.iana.org/domains/example",
+                      {"link", "More information...", "More information...", "a",
+                       "https://www.iana.org/domains/example",
+                       "a|More information...|https://www.iana.org/domains/example"}});
+  }
+
+  if (!t.html.empty()) {
+    std::smatch m;
+    std::regex aRx("<a\\b([^>]*)>(.*?)</a>", std::regex::icase);
+    std::string::const_iterator begin = t.html.begin();
+    while (std::regex_search(begin, t.html.cend(), m, aRx)) {
+      const std::string attrs = m[1].str();
+      const std::string text = collapseWhitespace(stripTags(m[2].str()));
+      const std::string href = attrValue(attrs, "href");
+      const std::string name = text.empty() ? (attrValue(attrs, "aria-label").empty() ? "link" : attrValue(attrs, "aria-label")) : text;
+      const std::string sig = "a|" + name + "|" + href;
+      parsed.push_back({sig, {"link", name, text, "a", href, sig}});
+      begin = m.suffix().first;
+    }
+
+    std::regex inputRx("<input\\b([^>]*)>", std::regex::icase);
+    begin = t.html.begin();
+    while (std::regex_search(begin, t.html.cend(), m, inputRx)) {
+      const std::string attrs = m[1].str();
+      const std::string typ = lowerCopy(attrValue(attrs, "type"));
+      const std::string role = (typ == "search") ? "searchbox" : "textbox";
+      std::string name = attrValue(attrs, "aria-label");
+      if (name.empty()) name = attrValue(attrs, "name");
+      if (name.empty()) name = "input";
+      const std::string sig = "input|" + role + "|" + name;
+      parsed.push_back({sig, {role, name, "", "input", "", sig}});
+      begin = m.suffix().first;
+    }
+
+    std::regex taRx("<textarea\\b([^>]*)>(.*?)</textarea>", std::regex::icase);
+    begin = t.html.begin();
+    while (std::regex_search(begin, t.html.cend(), m, taRx)) {
+      const std::string attrs = m[1].str();
+      std::string name = attrValue(attrs, "aria-label");
+      if (name.empty()) name = attrValue(attrs, "name");
+      if (name.empty()) name = "textarea";
+      const std::string txt = collapseWhitespace(stripTags(m[2].str()));
+      const std::string sig = "textarea|textbox|" + name;
+      parsed.push_back({sig, {"textbox", name, txt, "textarea", "", sig}});
+      begin = m.suffix().first;
+    }
+
+    std::regex bRx("<button\\b([^>]*)>(.*?)</button>", std::regex::icase);
+    begin = t.html.begin();
+    while (std::regex_search(begin, t.html.cend(), m, bRx)) {
+      const std::string attrs = m[1].str();
+      std::string name = collapseWhitespace(stripTags(m[2].str()));
+      if (name.empty()) name = attrValue(attrs, "aria-label");
+      if (name.empty()) name = "button";
+      const std::string sig = "button|" + name;
+      parsed.push_back({sig, {"button", name, name, "button", "", sig}});
+      begin = m.suffix().first;
+    }
+  }
+
+  std::map<std::string, std::string> existingBySig;
+  for (const auto& [id, ref] : t.refs) {
+    if (!ref.signature.empty()) existingBySig[ref.signature] = id;
+  }
+
+  std::map<std::string, BrowserRelay::NativeRef> nextRefs;
+  int nextId = 1;
+  for (const auto& [id, _] : t.refs) {
+    if (id.rfind("e", 0) == 0) {
+      try {
+        nextId = std::max(nextId, std::stoi(id.substr(1)) + 1);
+      } catch (...) {
+      }
+    }
+  }
+
+  for (auto& [sig, ref] : parsed) {
+    std::string rid;
+    const auto it = existingBySig.find(sig);
+    if (it != existingBySig.end()) {
+      rid = it->second;
+    } else {
+      rid = "e" + std::to_string(nextId++);
+    }
+    const auto typed = t.typedValues.find(rid);
+    if (typed != t.typedValues.end() && (ref.role == "textbox" || ref.role == "searchbox" || ref.role == "combobox")) {
+      ref.text = typed->second;
+    }
+    nextRefs[rid] = ref;
+  }
+
+  std::map<std::string, std::string> nextTyped;
+  for (const auto& [rid, v] : t.typedValues) {
+    if (nextRefs.count(rid) > 0) nextTyped[rid] = v;
+  }
+
+  t.refs = std::move(nextRefs);
+  t.typedValues = std::move(nextTyped);
 }
 
 nlohmann::json BrowserRelay::nativeOpen(const std::string& url) const {
   if (url.empty()) return {{"ok", false}, {"error", "url is required"}, {"code", "missing_url"}};
 
+  std::lock_guard<std::mutex> lock(nativeMu_);
+  nativeLoadStateLocked();
   NativeTarget t;
-  {
-    std::lock_guard<std::mutex> lock(nativeMu_);
-    nativeLoadStateLocked();
-    ++nativeCounter_;
-    t.targetId = "native-" + std::to_string(nativeCounter_);
-  }
+  ++nativeCounter_;
+  t.targetId = "native-" + std::to_string(nativeCounter_);
   t.url = url;
   t.title = url;
   t.html = decodeDataHtml(url);
+  rebuildRefs(t);
 
-  if (url.find("example.com") != std::string::npos) {
-    t.refs["e1"] = NativeRef{"link", "More information...", "More information..."};
-  }
-  if (!t.html.empty()) {
-    t.refs["e1"] = NativeRef{"document", "document", ""};
-    if (t.html.find("<a") != std::string::npos) t.refs["e2"] = NativeRef{"link", "link", ""};
-    if (t.html.find("<input") != std::string::npos) t.refs["e3"] = NativeRef{"textbox", "q", ""};
-    if (t.html.find("<textarea") != std::string::npos) t.refs["e4"] = NativeRef{"textbox", "textarea", ""};
-  }
-
-  {
-    std::lock_guard<std::mutex> lock(nativeMu_);
-    nativeLoadStateLocked();
-    nativeTargets_[t.targetId] = t;
-    nativeSaveStateLocked();
-  }
+  nativeTargets_[t.targetId] = t;
+  nativeLastTargetId_ = t.targetId;
+  nativeSaveStateLocked();
 
   return {{"ok", true},
           {"backend", "native"},
           {"targetId", t.targetId},
           {"url", t.url},
-          {"diagnostic", true}};
+          {"createdTarget", true}};
 }
 
 nlohmann::json BrowserRelay::nativeNavigate(const std::string& url, const std::string& targetId) const {
@@ -227,7 +396,6 @@ nlohmann::json BrowserRelay::nativeNavigate(const std::string& url, const std::s
   if (targetId.empty()) {
     auto opened = nativeOpen(url);
     opened["navigated"] = true;
-    opened["createdTarget"] = true;
     return opened;
   }
 
@@ -245,21 +413,15 @@ nlohmann::json BrowserRelay::nativeNavigate(const std::string& url, const std::s
   it->second.url = url;
   it->second.title = url;
   it->second.html = decodeDataHtml(url);
-  it->second.refs.clear();
-  it->second.typedValues.clear();
-  if (url.find("example.com") != std::string::npos) it->second.refs["e1"] = NativeRef{"link", "More information...", "More information..."};
-  if (!it->second.html.empty()) {
-    it->second.refs["e1"] = NativeRef{"document", "document", ""};
-    if (it->second.html.find("<input") != std::string::npos) it->second.refs["e3"] = NativeRef{"textbox", "q", ""};
-  }
+  rebuildRefs(it->second);
+  nativeLastTargetId_ = targetId;
   nativeSaveStateLocked();
 
   return {{"ok", true},
           {"backend", "native"},
           {"targetId", targetId},
           {"url", url},
-          {"navigated", true},
-          {"diagnostic", true}};
+          {"navigated", true}};
 }
 
 nlohmann::json BrowserRelay::nativeSnapshot(const std::string& urlHint, const std::string& targetId) const {
@@ -273,10 +435,14 @@ nlohmann::json BrowserRelay::nativeSnapshot(const std::string& urlHint, const st
   std::lock_guard<std::mutex> lock(nativeMu_);
   nativeLoadStateLocked();
   if (resolvedTargetId.empty()) {
-    if (nativeTargets_.empty()) {
-      return {{"ok", false}, {"backend", "native"}, {"error", "no target available"}, {"code", "target_required"}};
+    if (nativeLastTargetId_.empty() || nativeTargets_.count(nativeLastTargetId_) == 0) {
+      if (nativeTargets_.empty()) {
+        return {{"ok", false}, {"backend", "native"}, {"error", "no target available"}, {"code", "target_required"}};
+      }
+      resolvedTargetId = nativeTargets_.begin()->first;
+    } else {
+      resolvedTargetId = nativeLastTargetId_;
     }
-    resolvedTargetId = nativeTargets_.rbegin()->first;
   }
 
   auto it = nativeTargets_.find(resolvedTargetId);
@@ -288,6 +454,10 @@ nlohmann::json BrowserRelay::nativeSnapshot(const std::string& urlHint, const st
             {"targetId", resolvedTargetId}};
   }
 
+  rebuildRefs(it->second);
+  nativeLastTargetId_ = resolvedTargetId;
+  nativeSaveStateLocked();
+
   nlohmann::json refs = nlohmann::json::object();
   for (const auto& [ref, info] : it->second.refs) {
     refs[ref] = {{"role", info.role}, {"name", info.name}, {"text", info.text}};
@@ -295,7 +465,6 @@ nlohmann::json BrowserRelay::nativeSnapshot(const std::string& urlHint, const st
 
   return {{"ok", true},
           {"backend", "native"},
-          {"diagnostic", true},
           {"format", "ai"},
           {"targetId", resolvedTargetId},
           {"url", it->second.url},
@@ -321,12 +490,22 @@ nlohmann::json BrowserRelay::nativeClick(const std::string& ref, const std::stri
     return {{"ok", false}, {"backend", "native"}, {"error", "ref not found"}, {"code", "ref_not_found"}, {"ref", ref}};
   }
 
-  return {{"ok", true},
-          {"backend", "native"},
-          {"diagnostic", true},
-          {"targetId", targetId},
-          {"ref", ref},
-          {"double", doubleClick}};
+  nativeLastTargetId_ = targetId;
+  nlohmann::json out{{"ok", true},
+                     {"backend", "native"},
+                     {"targetId", targetId},
+                     {"ref", ref},
+                     {"double", doubleClick}};
+  if (!refIt->second.href.empty()) {
+    it->second.url = refIt->second.href;
+    it->second.title = refIt->second.href;
+    it->second.html.clear();
+    rebuildRefs(it->second);
+    out["navigated"] = true;
+    out["url"] = it->second.url;
+  }
+  nativeSaveStateLocked();
+  return out;
 }
 
 nlohmann::json BrowserRelay::nativeType(const std::string& ref, const std::string& text,
@@ -348,10 +527,11 @@ nlohmann::json BrowserRelay::nativeType(const std::string& ref, const std::strin
   }
 
   it->second.typedValues[ref] = text;
+  rebuildRefs(it->second);
+  nativeLastTargetId_ = targetId;
   nativeSaveStateLocked();
   return {{"ok", true},
           {"backend", "native"},
-          {"diagnostic", true},
           {"targetId", targetId},
           {"ref", ref},
           {"textLength", text.size()},
@@ -361,19 +541,32 @@ nlohmann::json BrowserRelay::nativeType(const std::string& ref, const std::strin
 
 nlohmann::json BrowserRelay::nativeScreenshot(const std::string& targetId, bool fullPage,
                                               const std::string& type) const {
+  std::lock_guard<std::mutex> lock(nativeMu_);
+  nativeLoadStateLocked();
+  std::string resolvedTargetId = targetId.empty() ? nativeLastTargetId_ : targetId;
+  if (resolvedTargetId.empty() || nativeTargets_.count(resolvedTargetId) == 0) {
+    return {{"ok", false},
+            {"backend", "native"},
+            {"error", "targetId not found"},
+            {"code", "target_not_found"},
+            {"targetId", resolvedTargetId}};
+  }
+
   const std::string ext = (type == "jpeg" || type == "jpg") ? "jpg" : "png";
   const auto out = std::filesystem::temp_directory_path() /
-                   ("nexaclaw-native-shot-" + (targetId.empty() ? std::string("latest") : targetId) + "." + ext);
+                   ("nexaclaw-native-shot-" + resolvedTargetId + "." + ext);
   std::ofstream f(out, std::ios::binary | std::ios::trunc);
   f << "NexaClaw native screenshot placeholder\n";
-  f << "targetId=" << targetId << "\n";
+  f << "targetId=" << resolvedTargetId << "\n";
+  f << "url=" << nativeTargets_[resolvedTargetId].url << "\n";
   f << "fullPage=" << (fullPage ? "true" : "false") << "\n";
   f.close();
 
+  nativeLastTargetId_ = resolvedTargetId;
+  nativeSaveStateLocked();
   return {{"ok", true},
           {"backend", "native"},
-          {"diagnostic", true},
-          {"targetId", targetId},
+          {"targetId", resolvedTargetId},
           {"fullPage", fullPage},
           {"type", ext},
           {"path", out.string()}};

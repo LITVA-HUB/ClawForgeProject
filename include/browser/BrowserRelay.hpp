@@ -27,11 +27,14 @@ class BrowserRelay {
   nlohmann::json screenshot(const std::string& targetId = "", bool fullPage = false,
                             const std::string& type = "png") const;
 
- private:
+ public:
   struct NativeRef {
     std::string role;
     std::string name;
     std::string text;
+    std::string tag;
+    std::string href;
+    std::string signature;
   };
 
   struct NativeTarget {
@@ -43,10 +46,12 @@ class BrowserRelay {
     std::map<std::string, std::string> typedValues;
   };
 
+ private:
   core::BrowserConfig config_;
   mutable std::mutex nativeMu_;
   mutable std::map<std::string, NativeTarget> nativeTargets_;
   mutable int nativeCounter_{0};
+  mutable std::string nativeLastTargetId_;
 
   bool useOpenClawCli() const;
   bool useNativeBackend() const;
