@@ -1,10 +1,10 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 30 browser runtime wait/textGone fidelity slice.
+> Updated after Stage 31 advanced agent orchestration slice.
 
 ## Practical parity matrix
 
-| Area | OpenClaw | NexaClaw (Stage 30) | Status | Notes |
+| Area | OpenClaw | NexaClaw (Stage 31) | Status | Notes |
 |---|---|---|---|---|
 | HTTP API `/health`, `/api/message`, `/api/status` | ✅ | ✅ | Closed | Stable local gateway |
 | Session store | ✅ | ✅ | Closed | File-backed sessions |
@@ -16,7 +16,7 @@
 | Security audit (`security audit [--deep] [--fix]`) | ✅ | ⚠️ | Partial (Stage 23 slice 1) | dmScope/auth/perms checks + token-strength + audit-log perms + safe fixes |
 | Message command/action surface | ✅ | ⚠️ | Partial (Stage 16 baseline) | telegram `send/react/delete/poll` + strict target validation + dry-run |
 | Channels command family | ✅ | ⚠️ | Partial (Stage 15 baseline) | `channels list/status/capabilities/resolve/add/remove` (telegram baseline) |
-| Agent/agents command family | ✅ | ⚠️ | Partial (Stage 29 orchestration uplift) | `list/show/create/delete/use/run/runs` + deterministic run metadata history (`stateDir/agents/runs.jsonl`); run supports additive options (`model/thinking/run-timeout-seconds/cleanup`) with explicit structured fallback errors |
+| Agent/agents command family | ✅ | ⚠️ | Partial (Stage 31 advanced orchestration uplift) | `list/show/create/update/delete/use/run/runs/run-status`; richer agent metadata/subagent policy controls; deterministic run lifecycle metadata history (`stateDir/agents/runs.jsonl`) with `state/terminal/timestamps`; explicit structured fallback errors retained |
 | Multi-model providers + aliases + fallbacks | ✅ | ✅ | Closed (baseline) | openai/anthropic/openrouter/gemini/minimax |
 | Models auth parity beyond API keys | ✅ | ⚠️ | Partial (Stage 17 slice 2) | Native device-code start/login/poll baseline for `openai-codex` + legacy OpenClaw import bridge fallback |
 | OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + explicit stubs for not-yet branches |

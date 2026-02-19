@@ -177,6 +177,29 @@ std::vector<std::string> argValues(const std::vector<std::string>& pos, const st
   return out;
 }
 
+std::vector<std::string> splitCsv(const std::string& raw) {
+  auto trimLocal = [](std::string value) {
+    auto notSpace = [](unsigned char ch) { return !std::isspace(ch); };
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), notSpace));
+    value.erase(std::find_if(value.rbegin(), value.rend(), notSpace).base(), value.end());
+    return value;
+  };
+  std::vector<std::string> out;
+  std::string cur;
+  for (char ch : raw) {
+    if (ch == ',') {
+      cur = trimLocal(cur);
+      if (!cur.empty()) out.push_back(cur);
+      cur.clear();
+      continue;
+    }
+    cur.push_back(ch);
+  }
+  cur = trimLocal(cur);
+  if (!cur.empty()) out.push_back(cur);
+  return out;
+}
+
 bool hasFlag(const std::vector<std::string>& pos, const std::string& flag) {
   for (const auto& x : pos)
     if (x == flag) return true;
@@ -402,10 +425,39 @@ std::vector<json> listAgentRunRecords(const clawforge::core::AppConfig& cfg, con
   return records;
 }
 
+std::vector<json> listAgentRunRecordsFiltered(const clawforge::core::AppConfig& cfg,
+                                              const std::string& agentId,
+                                              int limit,
+                                              const std::string& statusFilter,
+                                              bool activeOnly) {
+  std::vector<json> rows = listAgentRunRecords(cfg, agentId, std::max(limit, 1) * 8);
+  std::vector<json> out;
+  for (const auto& row : rows) {
+    const std::string status = row.value("status", "");
+    const bool terminal = row.value("terminal", status == "completed" || status == "failed" || status == "stored" || status == "rejected");
+    if (!statusFilter.empty() && status != statusFilter) continue;
+    if (activeOnly && terminal) continue;
+    out.push_back(row);
+  }
+  if (static_cast<int>(out.size()) > limit) out.erase(out.begin(), out.end() - limit);
+  return out;
+}
+
+std::optional<json> findAgentRunRecord(const clawforge::core::AppConfig& cfg,
+                                       const std::string& runId,
+                                       const std::string& agentId) {
+  if (runId.empty()) return std::nullopt;
+  auto rows = listAgentRunRecords(cfg, agentId, 5000);
+  for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+    if (it->value("runId", "") == runId) return *it;
+  }
+  return std::nullopt;
+}
+
 int runAgentsFamily(const std::string& configPath, const std::vector<std::string>& pos, const std::string& top) {
   const auto cfg = clawforge::core::AppConfig::loadFromFile(configPath);
   auto reg = loadAgentsRegistry(cfg);
-  const std::vector<std::string> available = {"list", "show", "create", "delete", "use", "run", "runs"};
+  const std::vector<std::string> available = {"list", "show", "create", "update", "delete", "use", "run", "runs", "run-status"};
 
   std::string sub = "list";
   if (pos.size() >= 2) sub = pos[1];
@@ -440,9 +492,18 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
       std::cout << json{{"ok", false}, {"error", "invalid_limit"}, {"value", argValue(pos, "--limit").value_or("")}}.dump(2) << std::endl;
       return 1;
     }
+    const std::string statusFilter = argValue(pos, "--status").value_or("");
+    if (!statusFilter.empty()) {
+      const std::set<std::string> allowed = {"queued", "submitted", "running", "completed", "failed", "stored", "rejected"};
+      if (!allowed.count(statusFilter)) {
+        std::cout << json{{"ok", false}, {"error", "invalid_status"}, {"value", statusFilter}, {"allowed", json::array({"queued", "submitted", "running", "completed", "failed", "stored", "rejected"})}}.dump(2) << std::endl;
+        return 1;
+      }
+    }
+    const bool activeOnly = hasFlag(pos, "--active");
     json arr = json::array();
-    for (const auto& row : listAgentRunRecords(cfg, id, limit)) arr.push_back(row);
-    std::cout << json{{"ok", true}, {"command", top}, {"subcommand", "runs"}, {"agentId", id}, {"limit", limit}, {"runs", arr}}.dump(2) << std::endl;
+    for (const auto& row : listAgentRunRecordsFiltered(cfg, id, limit, statusFilter, activeOnly)) arr.push_back(row);
+    std::cout << json{{"ok", true}, {"command", top}, {"subcommand", "runs"}, {"agentId", id}, {"limit", limit}, {"status", statusFilter}, {"activeOnly", activeOnly}, {"runs", arr}}.dump(2) << std::endl;
     return 0;
   }
 
@@ -465,6 +526,69 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
     reg["agents"].push_back(json{{"id", id}, {"name", name}, {"sessionKey", sessionKey}, {"createdAtMs", nowMillis()}});
     saveAgentsRegistry(cfg, reg);
     std::cout << json{{"ok", true}, {"created", true}, {"agent", findAgent(reg, id).value()}}.dump(2) << std::endl;
+    return 0;
+  }
+
+  if (sub == "update" || sub == "set" || sub == "set-identity") {
+    if (pos.size() < 3 && !argValue(pos, "--agent").has_value()) {
+      std::cout << json{{"ok", false}, {"error", "usage"}, {"usage", top + " update <agent-id>|--agent <id> [--name <display-name>] [--session-key <session>] [--profile <name>] [--description <text>] [--role <text>] [--tags <a,b>] [--subagent-model <name>] [--subagent-thinking <level>] [--allow-agents <csv|*>] [--max-concurrent <n>] [--archive-after-minutes <n>]"}}.dump(2) << std::endl;
+      return 1;
+    }
+    const std::string id = argValue(pos, "--agent").value_or(pos.size() >= 3 ? pos[2] : reg.value("active", "main"));
+    bool found = false;
+    for (auto& row : reg["agents"]) {
+      if (row.value("id", "") != id) continue;
+      found = true;
+      if (const auto name = argValue(pos, "--name"); name.has_value()) row["name"] = *name;
+      if (const auto sessionKey = argValue(pos, "--session-key"); sessionKey.has_value() && !sessionKey->empty()) row["sessionKey"] = *sessionKey;
+      if (const auto profile = argValue(pos, "--profile"); profile.has_value()) row["profile"] = *profile;
+      if (const auto desc = argValue(pos, "--description"); desc.has_value()) row["description"] = *desc;
+      if (const auto role = argValue(pos, "--role"); role.has_value()) row["role"] = *role;
+      if (const auto tags = argValue(pos, "--tags"); tags.has_value()) row["tags"] = splitCsv(*tags);
+
+      json subagents = row.contains("subagents") && row["subagents"].is_object() ? row["subagents"] : json::object();
+      if (const auto model = argValue(pos, "--subagent-model"); model.has_value()) subagents["model"] = *model;
+      if (const auto thinking = argValue(pos, "--subagent-thinking"); thinking.has_value()) {
+        const std::set<std::string> allowed = {"off", "minimal", "low", "medium", "high", "xhigh"};
+        if (!allowed.count(*thinking)) {
+          std::cout << json{{"ok", false}, {"error", "invalid_subagent_thinking"}, {"value", *thinking}, {"allowed", json::array({"off", "minimal", "low", "medium", "high", "xhigh"})}}.dump(2) << std::endl;
+          return 1;
+        }
+        subagents["thinking"] = *thinking;
+      }
+      if (const auto allowAgents = argValue(pos, "--allow-agents"); allowAgents.has_value()) {
+        if (*allowAgents == "*") {
+          subagents["allowAgents"] = json::array({"*"});
+        } else {
+          subagents["allowAgents"] = splitCsv(*allowAgents);
+        }
+      }
+      if (const auto maxConcurrent = argValue(pos, "--max-concurrent"); maxConcurrent.has_value()) {
+        try {
+          subagents["maxConcurrent"] = std::max(1, std::stoi(*maxConcurrent));
+        } catch (...) {
+          std::cout << json{{"ok", false}, {"error", "invalid_max_concurrent"}, {"value", *maxConcurrent}}.dump(2) << std::endl;
+          return 1;
+        }
+      }
+      if (const auto archiveAfter = argValue(pos, "--archive-after-minutes"); archiveAfter.has_value()) {
+        try {
+          subagents["archiveAfterMinutes"] = std::max(1, std::stoi(*archiveAfter));
+        } catch (...) {
+          std::cout << json{{"ok", false}, {"error", "invalid_archive_after_minutes"}, {"value", *archiveAfter}}.dump(2) << std::endl;
+          return 1;
+        }
+      }
+      if (!subagents.empty()) row["subagents"] = subagents;
+      row["updatedAtMs"] = nowMillis();
+      break;
+    }
+    if (!found) {
+      std::cout << json{{"ok", false}, {"error", "agent_not_found"}, {"agentId", id}}.dump(2) << std::endl;
+      return 1;
+    }
+    saveAgentsRegistry(cfg, reg);
+    std::cout << json{{"ok", true}, {"updated", true}, {"agent", findAgent(reg, id).value()}}.dump(2) << std::endl;
     return 0;
   }
 
@@ -585,8 +709,8 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
       json out = *remoteTask;
       out["agent"] = *agent;
       out["mode"] = "gateway-task";
-      out["run"] = json{{"runId", runId}, {"status", "queued"}, {"startedAtMs", startedAtMs}, {"options", runOptions}};
-      appendAgentRunRecord(cfg, json{{"runId", runId}, {"agentId", id}, {"sessionKey", sessionKey}, {"mode", "gateway-task"}, {"status", "queued"}, {"message", *message}, {"startedAtMs", startedAtMs}, {"options", runOptions}});
+      out["run"] = json{{"runId", runId}, {"status", "queued"}, {"state", "accepted"}, {"terminal", false}, {"createdAtMs", startedAtMs}, {"startedAtMs", startedAtMs}, {"options", runOptions}};
+      appendAgentRunRecord(cfg, json{{"runId", runId}, {"agentId", id}, {"sessionKey", sessionKey}, {"mode", "gateway-task"}, {"status", "queued"}, {"state", "accepted"}, {"terminal", false}, {"message", *message}, {"createdAtMs", startedAtMs}, {"startedAtMs", startedAtMs}, {"options", runOptions}});
       std::cout << out.dump(2) << std::endl;
       return 0;
     }
@@ -596,8 +720,9 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
       json out = *remoteMsg;
       out["agent"] = *agent;
       out["mode"] = "gateway-message";
-      out["run"] = json{{"runId", runId}, {"status", "submitted"}, {"startedAtMs", startedAtMs}, {"options", runOptions}};
-      appendAgentRunRecord(cfg, json{{"runId", runId}, {"agentId", id}, {"sessionKey", sessionKey}, {"mode", "gateway-message"}, {"status", "submitted"}, {"message", *message}, {"startedAtMs", startedAtMs}, {"options", runOptions}});
+      const int64_t endedAtMs = nowMillis();
+      out["run"] = json{{"runId", runId}, {"status", "completed"}, {"state", "finished"}, {"terminal", true}, {"createdAtMs", startedAtMs}, {"startedAtMs", startedAtMs}, {"endedAtMs", endedAtMs}, {"options", runOptions}};
+      appendAgentRunRecord(cfg, json{{"runId", runId}, {"agentId", id}, {"sessionKey", sessionKey}, {"mode", "gateway-message"}, {"status", "completed"}, {"state", "finished"}, {"terminal", true}, {"message", *message}, {"createdAtMs", startedAtMs}, {"startedAtMs", startedAtMs}, {"endedAtMs", endedAtMs}, {"options", runOptions}});
       std::cout << out.dump(2) << std::endl;
       return 0;
     }
@@ -610,7 +735,7 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
                         {"supportedWithoutGateway", json::array({"timeoutMs", "message", "agentId"})}}
                        .dump(2)
                 << std::endl;
-      appendAgentRunRecord(cfg, json{{"runId", runId}, {"agentId", id}, {"sessionKey", sessionKey}, {"mode", "local-session"}, {"status", "rejected"}, {"message", *message}, {"startedAtMs", startedAtMs}, {"options", runOptions}, {"error", "advanced_options_require_gateway"}});
+      appendAgentRunRecord(cfg, json{{"runId", runId}, {"agentId", id}, {"sessionKey", sessionKey}, {"mode", "local-session"}, {"status", "rejected"}, {"state", "failed"}, {"terminal", true}, {"message", *message}, {"createdAtMs", startedAtMs}, {"startedAtMs", startedAtMs}, {"endedAtMs", nowMillis()}, {"options", runOptions}, {"error", "advanced_options_require_gateway"}});
       return 1;
     }
 
@@ -618,16 +743,37 @@ int runAgentsFamily(const std::string& configPath, const std::vector<std::string
     sessions.init();
     sessions.ensureSession(sessionKey);
     sessions.appendMessage(sessionKey, "user", *message);
-    appendAgentRunRecord(cfg, json{{"runId", runId}, {"agentId", id}, {"sessionKey", sessionKey}, {"mode", "local-session"}, {"status", "stored"}, {"message", *message}, {"startedAtMs", startedAtMs}, {"options", runOptions}});
+    const int64_t endedAtMs = nowMillis();
+    appendAgentRunRecord(cfg, json{{"runId", runId}, {"agentId", id}, {"sessionKey", sessionKey}, {"mode", "local-session"}, {"status", "stored"}, {"state", "finished"}, {"terminal", true}, {"message", *message}, {"createdAtMs", startedAtMs}, {"startedAtMs", startedAtMs}, {"endedAtMs", endedAtMs}, {"options", runOptions}});
     std::cout << json{{"ok", true},
                       {"mode", "local-session"},
                       {"queued", false},
                       {"agent", *agent},
                       {"sessionKey", sessionKey},
-                      {"run", json{{"runId", runId}, {"status", "stored"}, {"startedAtMs", startedAtMs}, {"options", runOptions}}},
+                      {"run", json{{"runId", runId}, {"status", "stored"}, {"state", "finished"}, {"terminal", true}, {"createdAtMs", startedAtMs}, {"startedAtMs", startedAtMs}, {"endedAtMs", endedAtMs}, {"options", runOptions}}},
                       {"note", "Gateway unavailable: stored as user message only"}}
                      .dump(2)
               << std::endl;
+    return 0;
+  }
+
+  if (sub == "run-status" || sub == "status") {
+    const std::string runId = argValue(pos, "--run-id").value_or(pos.size() >= 3 ? pos[2] : "");
+    if (runId.empty()) {
+      std::cout << json{{"ok", false}, {"error", "usage"}, {"usage", top + " run-status <run-id>|--run-id <id> [--agent <id>]"}}.dump(2) << std::endl;
+      return 1;
+    }
+    const std::string agentId = argValue(pos, "--agent").value_or("");
+    if (!agentId.empty() && !findAgent(reg, agentId).has_value()) {
+      std::cout << json{{"ok", false}, {"error", "agent_not_found"}, {"agentId", agentId}}.dump(2) << std::endl;
+      return 1;
+    }
+    const auto row = findAgentRunRecord(cfg, runId, agentId);
+    if (!row.has_value()) {
+      std::cout << json{{"ok", false}, {"error", "run_not_found"}, {"runId", runId}, {"agentId", agentId}}.dump(2) << std::endl;
+      return 1;
+    }
+    std::cout << json{{"ok", true}, {"command", top}, {"subcommand", "run-status"}, {"run", *row}}.dump(2) << std::endl;
     return 0;
   }
 

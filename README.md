@@ -7,7 +7,7 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 - 🇷🇺 Russian README: [README.ru.md](./README.ru.md)
 - Parity matrix: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
 - CLI parity table: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
-- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE16](./docs/STAGE16.md) · [STAGE18](./docs/STAGE18.md) · [STAGE19](./docs/STAGE19.md) · [STAGE28](./docs/STAGE28.md) · [STAGE29](./docs/STAGE29.md) · [STAGE30](./docs/STAGE30.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
+- Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE16](./docs/STAGE16.md) · [STAGE18](./docs/STAGE18.md) · [STAGE19](./docs/STAGE19.md) · [STAGE28](./docs/STAGE28.md) · [STAGE29](./docs/STAGE29.md) · [STAGE30](./docs/STAGE30.md) · [STAGE31](./docs/STAGE31.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
 
 ---
 
@@ -254,6 +254,9 @@ scripts/smoke_stage18_native_browser.sh
 scripts/smoke_stage19_admin_dashboard.sh
 scripts/smoke_stage21_agents.sh
 scripts/smoke_stage22_nodes_canvas_devices.sh
+scripts/smoke_stage29_agents_orchestration.sh
+scripts/smoke_stage30_browser_wait_native.sh
+scripts/smoke_stage31_agents_advanced.sh
 scripts/smoke_stage23_control_plane_slice1.sh
 scripts/smoke_stage25_nodes_runtime_slice2.sh
 
@@ -295,7 +298,7 @@ Key blocks:
 ## Known limits (honest)
 
 - Browser parity now has a native NexaClaw baseline backend (`browser.backend=native`) for core command/API flow, including modeled GET form-submit side effects with structured capability gates; `browser.backend=openclaw_cli` remains available for real browser relay compatibility
-- `agent/agents` CLI is baseline-only (list/show/create/delete/use/run + deterministic task/message/session fallback), not full OpenClaw orchestration parity
+- `agent/agents` CLI now has Stage31 advanced orchestration baseline (`list/show/create/update/delete/use/run/runs/run-status` + richer metadata/subagent policy controls + run lifecycle history), but still not full OpenClaw runtime subagent control parity
 - Telegram is baseline, not full multi-channel ecosystem
 - Canvas/Nodes/Devices have Stage 25 slice 2 practical runtime uplift: local read-safe runtime probe/invoke surface, virtual canvas snapshot, explicit capability-gated errors when runtime is unavailable
 - No full external subagent runtime orchestration

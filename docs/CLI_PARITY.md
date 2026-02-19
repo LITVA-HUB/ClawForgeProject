@@ -1,4 +1,4 @@
-# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 29 agent orchestration slice)
+# CLI Parity Matrix (OpenClaw docs audit -> NexaClaw Stage 31 advanced agent orchestration slice)
 
 Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 
@@ -27,8 +27,8 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `pairing` | list/approve/... | partial | `list`, `approve` |
 | `gateway` | status/start/stop/restart/call/probe/discover/... | partial | Stage 23 slice 1: `gateway`/`gateway run` alias to foreground run, added `probe`, `gateway call logs.tail`, and structured not_implemented for discover/install/uninstall |
 | `message` | send/... | partial | Stage 16 baseline: telegram `send|react|delete|poll` with strict target validation + dry-run |
-| `agent` | manage/ops | partial | Stage 29 orchestration uplift alias to `agents` family (`list/show/create/delete/use/run/runs`) + structured stubs for unavailable subpaths |
-| `agents` | manage/ops | partial | Stage 29 orchestration uplift (`list/show/create/delete/use/run/runs`) with file-backed registry + deterministic run metadata history + fallback orchestration |
+| `agent` | manage/ops | partial | Stage 31 orchestration uplift alias to `agents` family (`list/show/create/update/delete/use/run/runs/run-status`) + structured stubs for unavailable subpaths |
+| `agents` | manage/ops | partial | Stage 31 advanced orchestration (`list/show/create/update/delete/use/run/runs/run-status`) with file-backed registry, metadata/subagent policy fields, deterministic run lifecycle history, and structured fallback orchestration |
 | `acp` | protocol tooling | impossible-now | requires ACP ecosystem parity |
 | `approvals` | approvals workflow | stub | not mapped yet |
 | `channels` | channel providers mgmt | partial | telegram baseline: list/status/capabilities/resolve/add/remove |
@@ -118,14 +118,16 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - `gateway call` parity expanded: `nodes.*`, `devices.list|status|invoke`, `canvas.status|snapshot|invoke`
 - safety contract: invoke paths remain read-safe only with explicit capability-gated structured errors when runtime is unavailable
 
-### Agent / Agents (Stage 29 orchestration uplift)
+### Agent / Agents (Stage 31 advanced orchestration uplift)
 - `agents list` — **implemented baseline**
 - `agents show <id>` — **implemented baseline**
 - `agents create <id> [--name] [--session-key]` — **implemented baseline**
+- `agents update <id>|--agent <id> [--name] [--session-key] [--profile] [--description] [--role] [--tags <csv>] [--subagent-model] [--subagent-thinking] [--allow-agents <csv|*>] [--max-concurrent <n>] [--archive-after-minutes <n>]` — **implemented uplift**
 - `agents delete <id>` — **implemented baseline** (`main` protected)
 - `agents use <id>` — **implemented baseline** (active pointer)
 - `agents run [<id>|--agent <id>] --message <text> [--timeout-ms <ms>] [--model <name>] [--thinking <level>] [--run-timeout-seconds <s>] [--cleanup <keep|delete>]` — **implemented uplift**
-- `agents runs [<id>|--agent <id>] [--limit <n>]` — **implemented uplift**
+- `agents runs [<id>|--agent <id>] [--limit <n>] [--status <state>] [--active]` — **implemented uplift**
+- `agents run-status <run-id>|--run-id <id> [--agent <id>]` — **implemented uplift**
 - `agent ...` — **implemented baseline alias family**
 - unsupported subpaths return structured JSON `not_implemented` stubs
 
@@ -136,7 +138,9 @@ Orchestration path for `run`:
 
 Deterministic run metadata history:
 - run records persisted to `stateDir/agents/runs.jsonl`
-- `agents runs`/`agents history` list per-agent recent run outcomes
+- records now include run lifecycle metadata (`createdAtMs`, `startedAtMs`, optional `endedAtMs`, `state`, `terminal`)
+- `agents runs`/`agents history` list per-agent run outcomes with optional status/active filtering
+- `agents run-status` resolves a run record deterministically by `runId`
 - gateway-unavailable + advanced options returns explicit structured error (`advanced_options_require_gateway`)
 
 ### Tools
