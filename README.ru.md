@@ -293,7 +293,7 @@ scripts/benchmark_quick.sh 50
 
 ## Честные ограничения
 
-- `browser/snapshot` пока диагностический stub (без реального DOM/скриншота)
+- Browser parity имеет нативный baseline backend (`browser.backend=native`) для core command/API flow, включая моделирование GET form-submit side effects и structured capability gates; для реальной browser automation parity остаётся `browser.backend=openclaw_cli`
 - `agent/agents` CLI пока baseline-only (list/show/create/delete/use/run + детерминированный fallback tasks/message/session), это не полная parity orchestration OpenClaw
 - Telegram пока baseline, а не full multi-channel экосистема
 - Canvas/Nodes/Devices пока только в Stage 22 slice 1 baseline (безопасный локальный registry + structured stubs; без полного runtime-control)

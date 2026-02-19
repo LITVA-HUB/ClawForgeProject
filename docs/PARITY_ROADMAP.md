@@ -1,6 +1,6 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 23 slice 1 (control-plane cron/gateway/security uplift).
+> Updated after Stage 24 slice 2 (native browser runtime fidelity uplift).
 
 ## Practical parity matrix
 
@@ -21,7 +21,7 @@
 | Models auth parity beyond API keys | ✅ | ⚠️ | Partial (Stage 17 slice 2) | Native device-code start/login/poll baseline for `openai-codex` + legacy OpenClaw import bridge fallback |
 | OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + explicit stubs for not-yet branches |
 | Telegram channel baseline | ✅ | ⚠️ | Partial | polling+pairing, no webhooks/sharding |
-| Browser relay endpoints | ✅ | ⚠️ | Partial (Stage 20 slice 1 uplift) | Native backend now has capability-gated runtime content fetch (`data:` + optional `http(s)` via curl) + structured warnings; `openclaw_cli` remains fallback for full automation |
+| Browser relay endpoints | ✅ | ⚠️ | Partial (Stage 24 slice 2 uplift) | Native backend now includes runtime form-submit modeling for GET flows (`type --submit` / submit-control click), plus capability-gated structured errors for unsupported submit methods; `openclaw_cli` remains fallback for full automation |
 | Browser admin dashboard | ✅ | ⚠️ | Partial (Stage 19 slice 2 polished) | `/admin` operator console UX (KPIs, refresh controls, denser sessions/cron visibility), enriched `/api/admin/overview`, safe cron quick-actions (`run due`/enable/disable), logs/audit tail |
 | Realtime events | ✅ | ✅ | Closed | SSE + EventBus |
 | Async task/job lane | ✅ | ⚠️ | Partial | internal queue, single worker |

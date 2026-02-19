@@ -293,7 +293,7 @@ Key blocks:
 
 ## Known limits (honest)
 
-- Browser parity now has a native NexaClaw baseline backend (`browser.backend=native`) for core command/API flow; `browser.backend=openclaw_cli` remains available for real browser relay compatibility
+- Browser parity now has a native NexaClaw baseline backend (`browser.backend=native`) for core command/API flow, including modeled GET form-submit side effects with structured capability gates; `browser.backend=openclaw_cli` remains available for real browser relay compatibility
 - `agent/agents` CLI is baseline-only (list/show/create/delete/use/run + deterministic task/message/session fallback), not full OpenClaw orchestration parity
 - Telegram is baseline, not full multi-channel ecosystem
 - Canvas/Nodes/Devices are Stage 22 slice 1 baseline only (safe local registry + structured stubs; no full runtime control yet)

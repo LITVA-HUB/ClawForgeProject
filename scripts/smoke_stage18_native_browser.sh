@@ -118,6 +118,60 @@ print('ok')
 PY
 "$BIN" browser screenshot "$TID_DATA" --config "$CFG" | grep -q '"path": '
 
+# form submit fidelity: submit=true on textbox should navigate via GET action with query params
+OPEN_FORM=$("$BIN" browser open "data:text/html,%3Chtml%3E%3Cbody%3E%3Cform%20action%3D%27https%3A%2F%2Fexample.com%2Fsearch%27%20method%3D%27get%27%3E%3Cinput%20name%3D%27q%27%20aria-label%3D%27Query%27/%3E%3Cbutton%20type%3D%27submit%27%3EGo%3C/button%3E%3C/form%3E%3C/body%3E%3C/html%3E" --config "$CFG")
+TID_FORM=$(python3 - <<'PY' "$OPEN_FORM"
+import json,sys
+print(json.loads(sys.argv[1]).get('targetId',''))
+PY
+)
+[[ -n "$TID_FORM" ]]
+SNAP_FORM=$("$BIN" browser snapshot --target-id "$TID_FORM" --config "$CFG")
+REF_FORM_INPUT=$(python3 - <<'PY' "$SNAP_FORM"
+import json,sys
+refs=(json.loads(sys.argv[1]).get('refs') or {})
+for k,v in refs.items():
+    if isinstance(v,dict) and v.get('role') in ('textbox','searchbox'):
+        print(k); break
+else:
+    print('')
+PY
+)
+[[ -n "$REF_FORM_INPUT" ]]
+TYPE_SUBMIT_OUT=$("$BIN" browser type "$REF_FORM_INPUT" "nexa stage24" --target-id "$TID_FORM" --submit --config "$CFG")
+echo "$TYPE_SUBMIT_OUT" | grep -q '"submitted": true'
+python3 - <<'PY' "$TYPE_SUBMIT_OUT"
+import json,sys
+j=json.loads(sys.argv[1])
+assert j.get('navigated') is True, 'expected navigated=true'
+assert 'q=nexa+stage24' in (j.get('url') or ''), 'expected encoded GET query in resulting url'
+print('ok')
+PY
+
+# capability gate: unsupported form method should return structured error code
+OPEN_FORM_POST=$("$BIN" browser open "data:text/html,%3Chtml%3E%3Cbody%3E%3Cform%20action%3D%27https%3A%2F%2Fexample.com%2Fsearch%27%20method%3D%27post%27%3E%3Cinput%20name%3D%27q%27%20aria-label%3D%27Query%27/%3E%3Cbutton%20type%3D%27submit%27%3EGo%3C/button%3E%3C/form%3E%3C/body%3E%3C/html%3E" --config "$CFG")
+TID_FORM_POST=$(python3 - <<'PY' "$OPEN_FORM_POST"
+import json,sys
+print(json.loads(sys.argv[1]).get('targetId',''))
+PY
+)
+SNAP_FORM_POST=$("$BIN" browser snapshot --target-id "$TID_FORM_POST" --config "$CFG")
+REF_FORM_POST_INPUT=$(python3 - <<'PY' "$SNAP_FORM_POST"
+import json,sys
+refs=(json.loads(sys.argv[1]).get('refs') or {})
+for k,v in refs.items():
+    if isinstance(v,dict) and v.get('role') in ('textbox','searchbox'):
+        print(k); break
+else:
+    print('')
+PY
+)
+if "$BIN" browser type "$REF_FORM_POST_INPUT" "blocked" --target-id "$TID_FORM_POST" --submit --config "$CFG" >/tmp/nexaclaw-stage18-native-bad-form-method.json 2>&1; then
+  echo "[FAIL] native form submit unexpectedly succeeded for unsupported method"
+  exit 1
+fi
+grep -q '"code": "native_capability_form_method_unsupported"' /tmp/nexaclaw-stage18-native-bad-form-method.json
+
 # error path: unknown targetId for snapshot/click
 if "$BIN" browser snapshot --target-id native-404 --config "$CFG" >/tmp/nexaclaw-stage18-native-bad-snap.json 2>&1; then
   echo "[FAIL] native snapshot unexpectedly succeeded for unknown target"

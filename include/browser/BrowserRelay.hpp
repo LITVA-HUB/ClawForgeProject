@@ -35,6 +35,15 @@ class BrowserRelay {
     std::string tag;
     std::string href;
     std::string signature;
+    std::string formId;
+    std::string inputName;
+    std::string inputType;
+    bool submitControl{false};
+  };
+
+  struct NativeForm {
+    std::string action;
+    std::string method;
   };
 
   struct NativeRuntime {
@@ -49,6 +58,7 @@ class BrowserRelay {
     std::string html;
     NativeRuntime runtime;
     std::map<std::string, NativeRef> refs;
+    std::map<std::string, NativeForm> forms;
     std::map<std::string, std::string> typedValues;
   };
 
@@ -75,6 +85,9 @@ class BrowserRelay {
                             const std::string& targetId, bool submit, bool slowly) const;
   nlohmann::json nativeScreenshot(const std::string& targetId, bool fullPage,
                                   const std::string& type) const;
+  nlohmann::json nativeSubmitFormLocked(NativeTarget& t, const std::string& formId,
+                                        const std::string& triggerRef, const std::string& targetId,
+                                        const std::string& trigger) const;
 };
 
 }  // namespace clawforge::browser

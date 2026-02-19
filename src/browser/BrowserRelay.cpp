@@ -8,6 +8,7 @@
 #include <regex>
 #include <sstream>
 #include <vector>
+#include <iomanip>
 
 #include "util/Shell.hpp"
 
@@ -91,6 +92,40 @@ std::string decodeDataHtml(const std::string& url) {
 
 std::string stripTags(const std::string& s) {
   return std::regex_replace(s, std::regex("<[^>]*>"), " ");
+}
+
+std::string urlEncode(const std::string& s) {
+  std::ostringstream out;
+  out.fill('0');
+  out << std::hex << std::uppercase;
+  for (unsigned char c : s) {
+    if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+      out << static_cast<char>(c);
+    } else if (c == ' ') {
+      out << '+';
+    } else {
+      out << '%' << std::setw(2) << static_cast<int>(c);
+    }
+  }
+  return out.str();
+}
+
+std::string joinUrl(const std::string& baseUrl, const std::string& action) {
+  if (action.empty()) return baseUrl;
+  if (action.rfind("http://", 0) == 0 || action.rfind("https://", 0) == 0 || action.rfind("data:", 0) == 0) return action;
+  if (baseUrl.empty()) return action;
+  if (action.front() == '/') {
+    const auto schemeEnd = baseUrl.find("://");
+    if (schemeEnd == std::string::npos) return action;
+    const auto hostEnd = baseUrl.find('/', schemeEnd + 3);
+    const std::string origin = hostEnd == std::string::npos ? baseUrl : baseUrl.substr(0, hostEnd);
+    return origin + action;
+  }
+  const auto qPos = baseUrl.find('?');
+  const std::string noQuery = qPos == std::string::npos ? baseUrl : baseUrl.substr(0, qPos);
+  const auto slash = noQuery.rfind('/');
+  if (slash == std::string::npos) return noQuery + "/" + action;
+  return noQuery.substr(0, slash + 1) + action;
 }
 
 std::string attrValue(const std::string& attrs, const std::string& key) {
@@ -211,7 +246,19 @@ void BrowserRelay::nativeLoadStateLocked() const {
         r.tag = it.value().value("tag", "");
         r.href = it.value().value("href", "");
         r.signature = it.value().value("signature", "");
+        r.formId = it.value().value("formId", "");
+        r.inputName = it.value().value("inputName", "");
+        r.inputType = it.value().value("inputType", "");
+        r.submitControl = it.value().value("submitControl", false);
         t.refs[it.key()] = r;
+      }
+    }
+    if (item.contains("forms") && item["forms"].is_object()) {
+      for (auto it = item["forms"].begin(); it != item["forms"].end(); ++it) {
+        NativeForm f;
+        f.action = it.value().value("action", "");
+        f.method = it.value().value("method", "get");
+        t.forms[it.key()] = f;
       }
     }
     if (item.contains("typedValues") && item["typedValues"].is_object()) {
@@ -233,7 +280,15 @@ void BrowserRelay::nativeSaveStateLocked() const {
                      {"text", ref.text},
                      {"tag", ref.tag},
                      {"href", ref.href},
-                     {"signature", ref.signature}};
+                     {"signature", ref.signature},
+                     {"formId", ref.formId},
+                     {"inputName", ref.inputName},
+                     {"inputType", ref.inputType},
+                     {"submitControl", ref.submitControl}};
+    }
+    nlohmann::json forms = nlohmann::json::object();
+    for (const auto& [formId, form] : t.forms) {
+      forms[formId] = {{"action", form.action}, {"method", form.method}};
     }
     nlohmann::json typed = nlohmann::json::object();
     for (const auto& [refId, value] : t.typedValues) typed[refId] = value;
@@ -244,6 +299,7 @@ void BrowserRelay::nativeSaveStateLocked() const {
                        {"runtimeSource", t.runtime.source},
                        {"runtimeWarning", t.runtime.warning.is_object() ? t.runtime.warning : nlohmann::json::object()},
                        {"refs", refs},
+                       {"forms", forms},
                        {"typedValues", typed}});
   }
 
@@ -284,7 +340,11 @@ nlohmann::json BrowserRelay::nativeStatus() const {
           {"nativeRuntime",
            {{"httpFetch", nativeHttpFetchAvailable()},
             {"parsedUrlSchemes", {"data:text/html", "http", "https"}},
-            {"structuredWarnings", true}}},
+            {"structuredWarnings", true},
+            {"capabilityGates",
+             {{"formSubmit", true},
+              {"formSubmitMethods", {"get"}},
+              {"unsupportedFormSubmitMethods", {"post", "dialog"}}}}}},
           {"limitations", {"Native backend is still not a full browser engine (no JS execution / CDP session control)."}}};
 }
 
@@ -337,66 +397,92 @@ static void applyNativeRuntimeContent(BrowserRelay::NativeTarget& t) {
 
 static void rebuildRefs(BrowserRelay::NativeTarget& t) {
   std::vector<std::pair<std::string, BrowserRelay::NativeRef>> parsed;
-  parsed.push_back({"doc", {"document", t.title.empty() ? "document" : t.title, "", "document", "", "document"}});
+  parsed.push_back({"doc", {"document", t.title.empty() ? "document" : t.title, "", "document", "", "document", "", "", "", false}});
+
+  t.forms.clear();
 
   if (t.url.find("example.com") != std::string::npos) {
     parsed.push_back({"a|More information...|https://www.iana.org/domains/example",
                       {"link", "More information...", "More information...", "a",
                        "https://www.iana.org/domains/example",
-                       "a|More information...|https://www.iana.org/domains/example"}});
+                       "a|More information...|https://www.iana.org/domains/example", "", "", "", false}});
   }
 
   if (!t.html.empty()) {
-    std::smatch m;
+    struct FormSpan {
+      std::string id;
+      size_t start;
+      size_t end;
+    };
+    std::vector<FormSpan> formSpans;
+
+    std::regex formRx("<form\\b([^>]*)>(.*?)</form>", std::regex::icase);
+    int formCounter = 1;
+    for (auto it = std::sregex_iterator(t.html.begin(), t.html.end(), formRx); it != std::sregex_iterator(); ++it) {
+      const std::string attrs = (*it)[1].str();
+      const std::string formId = "form-" + std::to_string(formCounter++);
+      BrowserRelay::NativeForm f;
+      f.action = attrValue(attrs, "action");
+      f.method = lowerCopy(attrValue(attrs, "method"));
+      if (f.method.empty()) f.method = "get";
+      t.forms[formId] = f;
+      formSpans.push_back({formId, static_cast<size_t>((*it).position(0)), static_cast<size_t>((*it).position(0) + (*it).length(0))});
+    }
+
+    auto findFormId = [&](size_t pos) {
+      for (const auto& fs : formSpans) {
+        if (pos >= fs.start && pos < fs.end) return fs.id;
+      }
+      return std::string();
+    };
+
     std::regex aRx("<a\\b([^>]*)>(.*?)</a>", std::regex::icase);
-    std::string::const_iterator begin = t.html.begin();
-    while (std::regex_search(begin, t.html.cend(), m, aRx)) {
-      const std::string attrs = m[1].str();
-      const std::string text = collapseWhitespace(stripTags(m[2].str()));
+    for (auto it = std::sregex_iterator(t.html.begin(), t.html.end(), aRx); it != std::sregex_iterator(); ++it) {
+      const std::string attrs = (*it)[1].str();
+      const std::string text = collapseWhitespace(stripTags((*it)[2].str()));
       const std::string href = attrValue(attrs, "href");
       const std::string name = text.empty() ? (attrValue(attrs, "aria-label").empty() ? "link" : attrValue(attrs, "aria-label")) : text;
       const std::string sig = "a|" + name + "|" + href;
-      parsed.push_back({sig, {"link", name, text, "a", href, sig}});
-      begin = m.suffix().first;
+      parsed.push_back({sig, {"link", name, text, "a", href, sig, "", "", "", false}});
     }
 
     std::regex inputRx("<input\\b([^>]*)>", std::regex::icase);
-    begin = t.html.begin();
-    while (std::regex_search(begin, t.html.cend(), m, inputRx)) {
-      const std::string attrs = m[1].str();
+    for (auto it = std::sregex_iterator(t.html.begin(), t.html.end(), inputRx); it != std::sregex_iterator(); ++it) {
+      const std::string attrs = (*it)[1].str();
       const std::string typ = lowerCopy(attrValue(attrs, "type"));
-      const std::string role = (typ == "search") ? "searchbox" : "textbox";
+      const bool submitControl = (typ == "submit" || typ == "image");
+      const std::string role = submitControl ? "button" : ((typ == "search") ? "searchbox" : "textbox");
       std::string name = attrValue(attrs, "aria-label");
       if (name.empty()) name = attrValue(attrs, "name");
-      if (name.empty()) name = "input";
-      const std::string sig = "input|" + role + "|" + name;
-      parsed.push_back({sig, {role, name, "", "input", "", sig}});
-      begin = m.suffix().first;
+      if (name.empty()) name = submitControl ? "submit" : "input";
+      const std::string formId = findFormId(static_cast<size_t>((*it).position(0)));
+      const std::string sig = "input|" + role + "|" + name + "|" + formId + "|" + typ;
+      parsed.push_back({sig, {role, name, submitControl ? name : "", "input", "", sig, formId, attrValue(attrs, "name"), typ, submitControl}});
     }
 
     std::regex taRx("<textarea\\b([^>]*)>(.*?)</textarea>", std::regex::icase);
-    begin = t.html.begin();
-    while (std::regex_search(begin, t.html.cend(), m, taRx)) {
-      const std::string attrs = m[1].str();
+    for (auto it = std::sregex_iterator(t.html.begin(), t.html.end(), taRx); it != std::sregex_iterator(); ++it) {
+      const std::string attrs = (*it)[1].str();
       std::string name = attrValue(attrs, "aria-label");
       if (name.empty()) name = attrValue(attrs, "name");
       if (name.empty()) name = "textarea";
-      const std::string txt = collapseWhitespace(stripTags(m[2].str()));
-      const std::string sig = "textarea|textbox|" + name;
-      parsed.push_back({sig, {"textbox", name, txt, "textarea", "", sig}});
-      begin = m.suffix().first;
+      const std::string txt = collapseWhitespace(stripTags((*it)[2].str()));
+      const std::string formId = findFormId(static_cast<size_t>((*it).position(0)));
+      const std::string sig = "textarea|textbox|" + name + "|" + formId;
+      parsed.push_back({sig, {"textbox", name, txt, "textarea", "", sig, formId, attrValue(attrs, "name"), "textarea", false}});
     }
 
     std::regex bRx("<button\\b([^>]*)>(.*?)</button>", std::regex::icase);
-    begin = t.html.begin();
-    while (std::regex_search(begin, t.html.cend(), m, bRx)) {
-      const std::string attrs = m[1].str();
-      std::string name = collapseWhitespace(stripTags(m[2].str()));
+    for (auto it = std::sregex_iterator(t.html.begin(), t.html.end(), bRx); it != std::sregex_iterator(); ++it) {
+      const std::string attrs = (*it)[1].str();
+      std::string name = collapseWhitespace(stripTags((*it)[2].str()));
       if (name.empty()) name = attrValue(attrs, "aria-label");
       if (name.empty()) name = "button";
-      const std::string sig = "button|" + name;
-      parsed.push_back({sig, {"button", name, name, "button", "", sig}});
-      begin = m.suffix().first;
+      const std::string typ = lowerCopy(attrValue(attrs, "type"));
+      const bool submitControl = typ.empty() || typ == "submit";
+      const std::string formId = findFormId(static_cast<size_t>((*it).position(0)));
+      const std::string sig = "button|" + name + "|" + formId + "|" + typ;
+      parsed.push_back({sig, {"button", name, name, "button", "", sig, formId, "", typ, submitControl}});
     }
   }
 
@@ -558,6 +644,72 @@ nlohmann::json BrowserRelay::nativeSnapshot(const std::string& urlHint, const st
   return out;
 }
 
+nlohmann::json BrowserRelay::nativeSubmitFormLocked(NativeTarget& t, const std::string& formId,
+                                                  const std::string& triggerRef, const std::string& targetId,
+                                                  const std::string& trigger) const {
+  const auto fit = t.forms.find(formId);
+  if (fit == t.forms.end()) {
+    return {{"ok", false},
+            {"backend", "native"},
+            {"error", "form context not found"},
+            {"code", "native_form_context_missing"},
+            {"targetId", targetId},
+            {"ref", triggerRef}};
+  }
+
+  const std::string method = fit->second.method.empty() ? "get" : lowerCopy(fit->second.method);
+  if (method != "get") {
+    return {{"ok", false},
+            {"backend", "native"},
+            {"error", "native backend currently supports only GET form submission"},
+            {"code", "native_capability_form_method_unsupported"},
+            {"targetId", targetId},
+            {"ref", triggerRef},
+            {"capabilityGate", {{"feature", "formSubmit"}, {"supportedMethods", {"get"}}, {"requestedMethod", method}}}};
+  }
+
+  std::vector<std::pair<std::string, std::string>> fields;
+  for (const auto& [rid, r] : t.refs) {
+    if (r.formId != formId) continue;
+    if (!(r.role == "textbox" || r.role == "searchbox" || r.role == "combobox")) continue;
+    if (r.inputName.empty()) continue;
+    const auto typed = t.typedValues.find(rid);
+    std::string value = typed != t.typedValues.end() ? typed->second : r.text;
+    fields.push_back({r.inputName, value});
+  }
+
+  std::string resolved = joinUrl(t.url, fit->second.action);
+  std::string query;
+  for (size_t i = 0; i < fields.size(); ++i) {
+    if (i) query += "&";
+    query += urlEncode(fields[i].first) + "=" + urlEncode(fields[i].second);
+  }
+  if (!query.empty()) {
+    resolved += (resolved.find('?') == std::string::npos ? "?" : "&");
+    resolved += query;
+  }
+
+  t.url = resolved;
+  applyNativeRuntimeContent(t);
+  rebuildRefs(t);
+  nlohmann::json out{{"ok", true},
+                     {"backend", "native"},
+                     {"targetId", targetId},
+                     {"ref", triggerRef},
+                     {"submitted", true},
+                     {"navigated", true},
+                     {"url", t.url},
+                     {"runtime", {{"source", t.runtime.source}}},
+                     {"submission", {{"trigger", trigger},
+                                     {"formId", formId},
+                                     {"method", method},
+                                     {"action", fit->second.action},
+                                     {"fields", nlohmann::json::array()}}}};
+  for (const auto& kv : fields) out["submission"]["fields"].push_back({{"name", kv.first}, {"value", kv.second}});
+  if (t.runtime.warning.is_object() && !t.runtime.warning.empty()) out["runtime"]["warning"] = t.runtime.warning;
+  return out;
+}
+
 nlohmann::json BrowserRelay::nativeClick(const std::string& ref, const std::string& targetId,
                                          bool doubleClick) const {
   std::lock_guard<std::mutex> lock(nativeMu_);
@@ -581,7 +733,9 @@ nlohmann::json BrowserRelay::nativeClick(const std::string& ref, const std::stri
                      {"targetId", targetId},
                      {"ref", ref},
                      {"double", doubleClick}};
-  if (!refIt->second.href.empty()) {
+  if (refIt->second.submitControl && !refIt->second.formId.empty()) {
+    out = nativeSubmitFormLocked(it->second, refIt->second.formId, ref, targetId, "click");
+  } else if (!refIt->second.href.empty()) {
     it->second.url = refIt->second.href;
     applyNativeRuntimeContent(it->second);
     rebuildRefs(it->second);
@@ -591,6 +745,9 @@ nlohmann::json BrowserRelay::nativeClick(const std::string& ref, const std::stri
     if (it->second.runtime.warning.is_object() && !it->second.runtime.warning.empty()) {
       out["runtime"]["warning"] = it->second.runtime.warning;
     }
+  } else if (refIt->second.submitControl) {
+    out["warning"] = {{"code", "native_form_submit_no_form_context"},
+                      {"message", "Submit control has no associated form; click produced no navigation"}};
   }
   nativeSaveStateLocked();
   return out;
@@ -614,17 +771,39 @@ nlohmann::json BrowserRelay::nativeType(const std::string& ref, const std::strin
     return {{"ok", false}, {"backend", "native"}, {"error", "ref not found"}, {"code", "ref_not_found"}, {"ref", ref}};
   }
 
+  if (!(refIt->second.role == "textbox" || refIt->second.role == "searchbox" || refIt->second.role == "combobox")) {
+    return {{"ok", false},
+            {"backend", "native"},
+            {"error", "ref is not a text input control"},
+            {"code", "native_type_ref_not_text_input"},
+            {"ref", ref},
+            {"targetId", targetId},
+            {"refRole", refIt->second.role}};
+  }
+
+  const std::string submitFormId = refIt->second.formId;
   it->second.typedValues[ref] = text;
   rebuildRefs(it->second);
   nativeLastTargetId_ = targetId;
+  nlohmann::json out{{"ok", true},
+                     {"backend", "native"},
+                     {"targetId", targetId},
+                     {"ref", ref},
+                     {"textLength", text.size()},
+                     {"submit", submit},
+                     {"slowly", slowly}};
+  if (submit) {
+    if (!submitFormId.empty()) {
+      out = nativeSubmitFormLocked(it->second, submitFormId, ref, targetId, "type_submit");
+      out["typed"] = true;
+      out["textLength"] = text.size();
+    } else {
+      out["warning"] = {{"code", "native_form_submit_no_form_context"},
+                        {"message", "submit=true was requested but ref is not part of a form"}};
+    }
+  }
   nativeSaveStateLocked();
-  return {{"ok", true},
-          {"backend", "native"},
-          {"targetId", targetId},
-          {"ref", ref},
-          {"textLength", text.size()},
-          {"submit", submit},
-          {"slowly", slowly}};
+  return out;
 }
 
 nlohmann::json BrowserRelay::nativeScreenshot(const std::string& targetId, bool fullPage,
