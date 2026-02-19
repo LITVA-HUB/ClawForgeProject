@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -26,10 +28,42 @@ class BrowserRelay {
                             const std::string& type = "png") const;
 
  private:
+  struct NativeRef {
+    std::string role;
+    std::string name;
+    std::string text;
+  };
+
+  struct NativeTarget {
+    std::string targetId;
+    std::string url;
+    std::string title;
+    std::string html;
+    std::map<std::string, NativeRef> refs;
+    std::map<std::string, std::string> typedValues;
+  };
+
   core::BrowserConfig config_;
+  mutable std::mutex nativeMu_;
+  mutable std::map<std::string, NativeTarget> nativeTargets_;
+  mutable int nativeCounter_{0};
 
   bool useOpenClawCli() const;
+  bool useNativeBackend() const;
   nlohmann::json runOpenClawBrowser(const std::vector<std::string>& args) const;
+
+  void nativeLoadStateLocked() const;
+  void nativeSaveStateLocked() const;
+
+  nlohmann::json nativeStatus() const;
+  nlohmann::json nativeOpen(const std::string& url) const;
+  nlohmann::json nativeNavigate(const std::string& url, const std::string& targetId) const;
+  nlohmann::json nativeSnapshot(const std::string& urlHint, const std::string& targetId) const;
+  nlohmann::json nativeClick(const std::string& ref, const std::string& targetId, bool doubleClick) const;
+  nlohmann::json nativeType(const std::string& ref, const std::string& text,
+                            const std::string& targetId, bool submit, bool slowly) const;
+  nlohmann::json nativeScreenshot(const std::string& targetId, bool fullPage,
+                                  const std::string& type) const;
 };
 
 }  // namespace clawforge::browser

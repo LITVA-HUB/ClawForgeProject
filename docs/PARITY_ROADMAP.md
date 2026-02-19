@@ -1,10 +1,10 @@
 # PARITY ROADMAP (NexaClaw vs OpenClaw)
 
-> Updated after Stage 17 slice 2 (native OAuth device-code start + poll baseline).
+> Updated after Stage 18 slice 1 (native browser backend baseline + OpenClaw CLI fallback).
 
 ## Practical parity matrix
 
-| Area | OpenClaw | NexaClaw (Stage 17-s2) | Status | Notes |
+| Area | OpenClaw | NexaClaw (Stage 18-s1) | Status | Notes |
 |---|---|---|---|---|
 | HTTP API `/health`, `/api/message`, `/api/status` | ✅ | ✅ | Closed | Stable local gateway |
 | Session store | ✅ | ✅ | Closed | File-backed sessions |
@@ -20,7 +20,7 @@
 | Models auth parity beyond API keys | ✅ | ⚠️ | Partial (Stage 17 slice 2) | Native device-code start/login/poll baseline for `openai-codex` + legacy OpenClaw import bridge fallback |
 | OpenClaw CLI compatibility layer | ✅ | ⚠️ | Partial | implemented core + explicit stubs for not-yet branches |
 | Telegram channel baseline | ✅ | ⚠️ | Partial | polling+pairing, no webhooks/sharding |
-| Browser relay endpoints | ✅ | ⚠️ | Partial (Stage 16 baseline) | `status/open/navigate/snapshot/click/type/screenshot` via `openclaw_cli` backend bridge |
+| Browser relay endpoints | ✅ | ⚠️ | Partial (Stage 18 slice 1 baseline) | Native backend baseline (`browser.backend=native`) for core flow + `openclaw_cli` fallback for real OpenClaw automation |
 | Realtime events | ✅ | ✅ | Closed | SSE + EventBus |
 | Async task/job lane | ✅ | ⚠️ | Partial | internal queue, single worker |
 | Rate limiting + audit trail + recovery | ✅ | ✅ | Closed (baseline) | source RL, JSONL audit, task restore |
@@ -30,9 +30,9 @@
 
 ## Next recommended step
 
-After Stage 17 slice 2, the heaviest remaining parity items are:
+After Stage 18 slice 1, the heaviest remaining parity items are:
 
-1. Native browser backend (Playwright/CDP in NexaClaw runtime) to reduce external CLI dependency
+1. Upgrade native browser backend from diagnostic baseline to full Playwright/CDP control
 2. Channels multi-provider expansion (Discord/Slack/Signal/etc) beyond Telegram baseline
 3. `agents` / `agent` command-family baseline (list/add/delete/targeted runs)
 4. Multi-channel/plugin + nodes/canvas ecosystem parity

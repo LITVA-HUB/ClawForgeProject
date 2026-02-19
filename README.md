@@ -23,7 +23,7 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 - Channels management baseline: `channels list|status|capabilities|resolve|add|remove` (telegram)
 - Task lane API (`/api/tasks`) with timeout/cancel baseline
 - Security baseline: auth token mode, per-source rate limiting, audit JSONL
-- Browser relay Stage 16 baseline via `openclaw_cli`: `status/open/navigate/snapshot/click/type/screenshot`
+- Browser relay Stage 18 baseline: native backend (`browser.backend=native`) for `status/open/navigate/snapshot/click/type/screenshot`, with `openclaw_cli` fallback/compat mode
 - RU/EN CLI UX + doctor + smoke/benchmark scripts
 
 ---
@@ -152,7 +152,7 @@ NexaClaw Stage 10 provides practical CLI parity for high-value OpenClaw flows.
 - `models list|status|set|aliases|fallbacks|probe|set-image`
 - `models auth list|add|login|paste-token|setup-token|use|remove` + `models auth order get|set|clear`
 - `image-fallbacks list|add|remove|clear`
-- `browser status|open|navigate|snapshot|click|type|screenshot` (Stage 16 baseline via `openclaw_cli` backend)
+- `browser status|open|navigate|snapshot|click|type|screenshot` (Stage 18 baseline via `native` backend + `openclaw_cli` compatibility fallback)
 - `config get/set` (expanded key coverage)
 - `logs tail`, `system event`, `pairing list|approve`
 - `message send|react|delete|poll --channel telegram ...` (strict target validation + dry-run baseline)
@@ -287,7 +287,7 @@ Key blocks:
 
 ## Known limits (honest)
 
-- Browser parity currently relies on external `openclaw` CLI bridge (`browser.backend=openclaw_cli`), not native NexaClaw CDP runtime yet
+- Browser parity now has a native NexaClaw baseline backend (`browser.backend=native`) for core command/API flow; `browser.backend=openclaw_cli` remains available for real browser relay compatibility
 - Telegram is baseline, not full multi-channel ecosystem
 - No Canvas/Nodes integration yet
 - No full external subagent runtime orchestration

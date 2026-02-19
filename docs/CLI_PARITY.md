@@ -18,7 +18,7 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 | `sessions` | list/show/ops | partial | `nexaclaw sessions` list baseline |
 | `cron` | status/list/add/edit/enable/disable/run/runs/validate/rm | partial | Stage 14 semantic baseline (sessionTarget/payload/delivery/wakeMode + run history), still not full OpenClaw delivery ecosystem |
 | `tools` | list/call | implemented | `tools list`, `tools call <name> --json <payload>` |
-| `browser` | status/open/snapshot/... | partial | Stage 16 baseline: `status|open|navigate|snapshot|click|type|screenshot` via `openclaw_cli` backend bridge |
+| `browser` | status/open/snapshot/... | partial | Stage 18 baseline: `status|open|navigate|snapshot|click|type|screenshot` via native backend (`browser.backend=native`) with `openclaw_cli` fallback/compat |
 | `config` | get/set | partial | expanded key coverage, not full OpenClaw config surface |
 | `models` | list/status/set/aliases/fallbacks/probe/auth | implemented | plus `set-image`, auth profiles, `auth login` import bridge, `auth order` |
 | `image-fallbacks` | list/add/remove/clear | implemented | added as baseline config ops |
@@ -62,11 +62,11 @@ Source audit: `/opt/homebrew/lib/node_modules/openclaw/docs/cli/*.md`
 - `browser status` — **implemented**
 - `browser open <url>` — **implemented**
 - `browser navigate <url>` — **implemented**
-- `browser snapshot [urlHint]` — **implemented baseline** (AI snapshot via `openclaw_cli` backend)
+- `browser snapshot [urlHint]` — **implemented baseline** (native diagnostic snapshot in `browser.backend=native`; `openclaw_cli` bridge still supported)
 - `browser click <ref>` — **implemented baseline**
 - `browser type <ref> <text>` — **implemented baseline**
 - `browser screenshot [targetId]` — **implemented baseline**
-- limitation: powered by OpenClaw CLI bridge (`browser.backend=openclaw_cli`), not native NexaClaw CDP runtime yet
+- limitation: native backend is currently a deterministic diagnostic baseline (not full CDP/Playwright control yet); use `browser.backend=openclaw_cli` when real OpenClaw browser automation is required
 
 ### Cron (Stage 14 semantic baseline)
 - `cron status` — **implemented**
