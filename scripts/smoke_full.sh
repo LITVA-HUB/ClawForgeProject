@@ -47,6 +47,7 @@ scripts/smoke_stage50_agents_parity.sh >/dev/null
 scripts/smoke_stage51_agents_parity.sh >/dev/null
 scripts/smoke_stage52_agents_parity.sh >/dev/null
 scripts/smoke_stage53_agents_parity.sh >/dev/null
+scripts/smoke_stage54_agents_parity.sh >/dev/null
 BIN="${BIN:-./build/nexaclaw}"
 if [[ ! -x "$BIN" && -x ./build/clawforge ]]; then
   BIN="./build/clawforge"
