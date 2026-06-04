@@ -43,6 +43,9 @@ endfunction()
 
 find_package(Threads REQUIRED)
 
+# Expose version string as a compile-time definition for /health and --version
+add_compile_definitions(NEXACLAW_VERSION="${PROJECT_VERSION}")
+
 # Primary binary (new branding)
 add_executable(nexaclaw ${NEXACLAW_SOURCES})
 configure_nexa_target(nexaclaw)
