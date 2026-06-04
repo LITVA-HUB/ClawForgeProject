@@ -1,7 +1,5 @@
 #include "core/AuditTrail.hpp"
 
-#include <fstream>
-
 #include "util/FileUtil.hpp"
 #include "util/TimeUtil.hpp"
 
@@ -18,11 +16,19 @@ void AuditTrail::write(const std::string& event, const nlohmann::json& data) {
     util::FileUtil::ensureDir(filePath_.parent_path());
   }
 
-  nlohmann::json row = {{"ts", util::TimeUtil::nowIso8601()}, {"event", event}, {"data", data}};
+  if (!out_.is_open()) {
+    out_.open(filePath_, std::ios::out | std::ios::app);
+  }
+  if (!out_) return;
 
-  std::ofstream out(filePath_, std::ios::out | std::ios::app);
-  if (!out) return;
-  out << row.dump() << "\n";
+  nlohmann::json row = {{"ts", util::TimeUtil::nowIso8601()}, {"event", event}, {"data", data}};
+  out_ << row.dump() << "\n";
+}
+
+void AuditTrail::flush() {
+  // Ensure buffered audit events reach disk before process exit.
+  std::lock_guard<std::mutex> lock(mu_);
+  if (out_.is_open()) out_.flush();
 }
 
 }  // namespace clawforge::core
