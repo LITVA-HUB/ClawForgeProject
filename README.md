@@ -1,13 +1,49 @@
 # NexaClaw
 
-**Practical self-hosted AI gateway in C++** (OpenClaw-style architecture, lightweight core).
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+![C++20](https://img.shields.io/badge/C%2B%2B-20-blue)
+![CMake](https://img.shields.io/badge/build-CMake%203.20%2B-informational)
+![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 
-NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegram baseline, realtime events, task lane, security guards, and ops scripts.
+**NexaClaw is a practical self-hosted AI gateway and local-first control plane for developers building AI agents.**
+
+It provides sessions, tools, cron automation, realtime events, task lanes, Telegram integration, browser relay primitives, model routing, security guards, CLI workflows, audit logs, and ops scripts in a lightweight C++20 codebase.
+
+> **Repository note:** the project name is **NexaClaw**. The repository still uses the legacy name `ClawForgeProject` for migration continuity.
 
 - 🇷🇺 Russian README: [README.ru.md](./README.ru.md)
 - Parity matrix: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
 - CLI parity table: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
 - Stage docs: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE16](./docs/STAGE16.md) · [STAGE18](./docs/STAGE18.md) · [STAGE19](./docs/STAGE19.md) · [STAGE28](./docs/STAGE28.md) · [STAGE29](./docs/STAGE29.md) · [STAGE30](./docs/STAGE30.md) · [STAGE31](./docs/STAGE31.md) · [STAGE32](./docs/STAGE32.md) · [STAGE33](./docs/STAGE33.md) · [STAGE34](./docs/STAGE34.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
+
+---
+
+## Why this matters for OSS maintainers
+
+Modern AI agents often depend on cloud APIs, brittle scripts, and opaque automation glue. NexaClaw focuses on the pieces maintainers can inspect, run locally, test, and harden:
+
+- a local HTTP control plane for agent workflows;
+- session and transcript storage with JSONL auditability;
+- scoped tool policies for safer automation;
+- cron and task-lane primitives for repeatable maintenance work;
+- Telegram and browser-relay baselines for real operator workflows;
+- CLI-first operations, smoke tests, and diagnostics.
+
+The goal is to make agent infrastructure easier to self-host, debug, secure, and extend without turning every project into a large distributed system.
+
+---
+
+## Project status
+
+NexaClaw is an active early-stage OSS project. Core control-plane flows are implemented and usable for local experiments, demos, and maintainer automation. Some compatibility and orchestration features are intentionally marked as partial until they are hardened.
+
+Current maintainer focus:
+
+- improve CI and release discipline;
+- expand C++ test coverage and strict compile gates;
+- harden token auth, rate limiting, tool scopes, and audit logging;
+- improve CLI parity and migration docs;
+- document safe self-hosting patterns for AI-agent gateways.
 
 ---
 
@@ -41,7 +77,8 @@ NexaClaw is built as a local-first control plane: sessions, tools, cron, Telegra
 ### Run
 
 ```bash
-cd ~/PycharmProjects/NexaClawProject
+git clone https://github.com/LITVA-HUB/ClawForgeProject.git
+cd ClawForgeProject
 cp config/config.example.json config/config.json
 
 # Required for LLM responses
@@ -64,8 +101,6 @@ curl -s http://127.0.0.1:18890/health
 ---
 
 ## One-command install
-
-> Note: branding is **NexaClaw**, while the GitHub repository currently keeps the legacy name `ClawForgeProject` for migration continuity.
 
 User install (recommended):
 
@@ -306,3 +341,30 @@ Key blocks:
 - No full external subagent runtime orchestration
 
 For up-to-date details, check [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md).
+
+---
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, quality checks, and pull request guidance.
+
+Good first contributions:
+- Improve documentation and examples.
+- Add C++ tests for gateway behavior.
+- Improve CLI help text and diagnostics.
+- Add smoke tests for stable workflows.
+- Improve CI and release automation.
+
+---
+
+## Security
+
+NexaClaw is a local-first AI gateway. Security-sensitive areas include auth token mode, rate limiting, scoped tools, audit logs, browser relay behavior, Telegram pairing, and model-provider configuration.
+
+Please do not open public GitHub issues for security vulnerabilities. See [SECURITY.md](./SECURITY.md) for the full policy and reporting instructions.
+
+---
+
+## License
+
+[MIT](./LICENSE) — Copyright (c) 2026 LITVA-HUB
