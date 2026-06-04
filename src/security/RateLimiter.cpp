@@ -17,4 +17,14 @@ bool RateLimiter::allow(const std::string& source, int64_t nowMs) {
   return true;
 }
 
+void RateLimiter::reset(const std::string& source) {
+  std::lock_guard<std::mutex> lock(mu_);
+  buckets_.erase(source);
+}
+
+std::size_t RateLimiter::trackedSources() const {
+  std::lock_guard<std::mutex> lock(mu_);
+  return buckets_.size();
+}
+
 }  // namespace clawforge::security
