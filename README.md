@@ -1,5 +1,6 @@
 # NexaClaw
 
+[![CI](https://github.com/LITVA-HUB/ClawForgeProject/actions/workflows/ci.yml/badge.svg)](https://github.com/LITVA-HUB/ClawForgeProject/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-blue)
 ![CMake](https://img.shields.io/badge/build-CMake%203.20%2B-informational)
