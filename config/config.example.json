@@ -2,9 +2,12 @@
   "name": "nexaclaw",
   "workspace": "./workspace",
   "stateDir": "./state",
+  "logLevel": "info",
   "http": {
     "host": "127.0.0.1",
-    "port": 18890
+    "port": 18890,
+    "readTimeoutMs": 5000,
+    "writeTimeoutMs": 10000
   },
   "gateway": {
     "auth": {
