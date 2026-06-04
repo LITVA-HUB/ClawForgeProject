@@ -22,3 +22,6 @@ config/config.json
 
 # Compile commands for IDEs
 compile_commands.json
+
+# Service log output
+state/logs/*.log
