@@ -31,14 +31,16 @@
       "anthropic": {"endpoint": "https://api.anthropic.com/v1/messages", "apiKeyEnv": "ANTHROPIC_API_KEY", "apiStyle": "anthropic_messages"},
       "openrouter": {"endpoint": "https://openrouter.ai/api/v1/chat/completions", "apiKeyEnv": "OPENROUTER_API_KEY", "apiStyle": "openai_chat"},
       "gemini": {"endpoint": "https://generativelanguage.googleapis.com/v1beta/models", "apiKeyEnv": "GEMINI_API_KEY", "apiStyle": "gemini_generate_content"},
-      "minimax": {"endpoint": "https://api.minimax.io/v1/text/chatcompletion_v2", "apiKeyEnv": "MINIMAX_API_KEY", "apiStyle": "openai_chat"}
+      "minimax": {"endpoint": "https://api.minimax.io/v1/text/chatcompletion_v2", "apiKeyEnv": "MINIMAX_API_KEY", "apiStyle": "openai_chat"},
+      "openai-codex": {"endpoint": "https://api.openai.com/v1/chat/completions", "apiKeyEnv": "OPENAI_CODEX_TOKEN", "apiStyle": "openai_chat"}
     },
     "models": {
       "openai/gpt-4o-mini": {"provider": "openai", "model": "gpt-4o-mini"},
       "anthropic/claude-3-5-haiku-latest": {"provider": "anthropic", "model": "claude-3-5-haiku-latest"},
       "openrouter/openai/gpt-4o-mini": {"provider": "openrouter", "model": "openai/gpt-4o-mini"},
       "gemini/gemini-1.5-flash": {"provider": "gemini", "model": "gemini-1.5-flash"},
-      "minimax/abab6.5-chat": {"provider": "minimax", "model": "abab6.5-chat"}
+      "minimax/abab6.5-chat": {"provider": "minimax", "model": "abab6.5-chat"},
+      "openai-codex/codex-mini-latest": {"provider": "openai-codex", "model": "codex-mini-latest"}
     },
     "routing": {
       "current": "openai/gpt-4o-mini",
