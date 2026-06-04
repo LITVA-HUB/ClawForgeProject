@@ -1,13 +1,52 @@
 # NexaClaw
 
-**Практичный self-hosted AI gateway на C++** (архитектурно в духе OpenClaw, но как лёгкое ядро).
+[![CI](https://github.com/LITVA-HUB/ClawForgeProject/actions/workflows/ci.yml/badge.svg)](https://github.com/LITVA-HUB/ClawForgeProject/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+![C++20](https://img.shields.io/badge/C%2B%2B-20-blue)
+![CMake](https://img.shields.io/badge/build-CMake%203.20%2B-informational)
+![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
+
+**NexaClaw — практичный self-hosted AI gateway и локальный control plane для разработчиков AI-агентов.**
 
 NexaClaw — это локальный control plane: сессии, tools, cron, Telegram baseline, realtime-события, очередь задач, security-ограничения и ops-скрипты.
 
 - 🇬🇧 English README: [README.md](./README.md)
 - Матрица parity: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
 - CLI parity таблица: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
+- Руководство по self-hosting: [docs/SELF_HOSTING.md](./docs/SELF_HOSTING.md)
+- Устранение проблем: [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)
+- Переменные окружения: [docs/ENV_VARS.md](./docs/ENV_VARS.md)
+- История изменений: [CHANGELOG.md](./CHANGELOG.md)
 - Документация по стадиям: [STAGE4](./docs/STAGE4.md) · [STAGE5](./docs/STAGE5.md) · [STAGE6](./docs/STAGE6.md) · [STAGE7](./docs/STAGE7.md) · [STAGE8](./docs/STAGE8.md) · [STAGE10](./docs/STAGE10.md) · [STAGE11](./docs/STAGE11.md) · [STAGE12](./docs/STAGE12.md) · [STAGE13](./docs/STAGE13.md) · [STAGE14](./docs/STAGE14.md) · [STAGE15](./docs/STAGE15.md) · [STAGE16](./docs/STAGE16.md) · [STAGE18](./docs/STAGE18.md) · [STAGE19](./docs/STAGE19.md) · [STAGE12 gaps](./docs/STAGE12_CRITICAL_GAPS.md)
+
+---
+
+## Зачем это OSS-разработчикам
+
+Современные AI-агенты зачастую зависят от облачных API, хрупких скриптов и непрозрачного automation-клея. NexaClaw фокусируется на инфраструктуре, которую разработчик может инспектировать, запустить локально, протестировать и усилить:
+
+- локальный HTTP control plane для agent-воркфлоу;
+- хранилище сессий и JSONL-транскрипты для аудита;
+- scoped tool policy для безопасной автоматизации;
+- cron и task-lane примитивы для повторяемых задач;
+- Telegram и browser-relay baseline для реальных оператор-воркфлоу;
+- CLI-first операции, smoke tests и диагностика.
+
+Цель — сделать agent-инфраструктуру легче для self-hosting, отладки, защиты и расширения без превращения каждого проекта в большую распределённую систему.
+
+---
+
+## Статус проекта
+
+NexaClaw — активный early-stage OSS-проект. Основные control-plane потоки реализованы и пригодны для локальных экспериментов, демо и задач сопровождения. Часть compatibility и orchestration-фич намеренно помечена как частичная до завершения hardening.
+
+Текущий фокус:
+
+- стабилизация CI и release-дисциплины;
+- расширение C++ покрытия тестами;
+- hardening token auth, rate limiting, tool scopes и audit logging;
+- улучшение CLI parity и docs по миграции;
+- документирование безопасных паттернов self-hosting для AI-agent gateway.
 
 ---
 
@@ -41,7 +80,8 @@ NexaClaw — это локальный control plane: сессии, tools, cron,
 ### Запуск
 
 ```bash
-cd ~/PycharmProjects/NexaClawProject
+git clone https://github.com/LITVA-HUB/ClawForgeProject.git
+cd ClawForgeProject
 cp config/config.example.json config/config.json
 
 # Нужен для ответов через LLM
@@ -301,3 +341,23 @@ scripts/benchmark_quick.sh 50
 - Нет полной внешней orchestration-модели subagents
 
 Актуальный статус смотри в [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md).
+
+---
+
+## Участие в проекте
+
+Вклад приветствуется. Смотри [CONTRIBUTING.md](./CONTRIBUTING.md) для настройки окружения, проверки качества и руководства по PR.
+
+---
+
+## Безопасность
+
+NexaClaw — локальный AI-gateway. Чувствительные области: auth token mode, rate limiting, scoped tools, audit logs, browser relay, Telegram pairing.
+
+Не открывай публичные issues для уязвимостей. Смотри [SECURITY.md](./SECURITY.md) для инструкций по репортингу.
+
+---
+
+## Лицензия
+
+[MIT](./LICENSE) — Copyright (c) 2026 LITVA-HUB
