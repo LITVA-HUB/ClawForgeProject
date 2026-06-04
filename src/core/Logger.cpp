@@ -10,6 +10,7 @@ std::mutex Logger::mutex_;
 LogLevel Logger::level_ = LogLevel::Info;
 
 void Logger::setLevel(LogLevel level) { level_ = level; }
+LogLevel Logger::level() { return level_; }
 
 void Logger::debug(const std::string& msg) { log(LogLevel::Debug, msg); }
 void Logger::info(const std::string& msg) { log(LogLevel::Info, msg); }
