@@ -8,9 +8,10 @@ namespace clawforge::util {
 bool FileUtil::ensureDir(const std::filesystem::path& path) {
   std::error_code ec;
   if (std::filesystem::exists(path, ec)) {
-    return std::filesystem::is_directory(path, ec);
+    return std::filesystem::is_directory(path, ec) && !ec;
   }
-  return std::filesystem::create_directories(path, ec);
+  std::filesystem::create_directories(path, ec);
+  return !ec;
 }
 
 std::optional<std::string> FileUtil::readText(const std::filesystem::path& path) {
