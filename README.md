@@ -13,8 +13,12 @@ It provides sessions, tools, cron automation, realtime events, task lanes, Teleg
 > **Repository note:** the project name is **NexaClaw**. The repository still uses the legacy name `ClawForgeProject` for migration continuity.
 
 - 🇷🇺 Russian README: [README.ru.md](./README.ru.md)
+- Install guide: [INSTALL.md](./INSTALL.md)
 - Self-hosting guide: [docs/SELF_HOSTING.md](./docs/SELF_HOSTING.md)
 - Troubleshooting: [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)
+- FAQ: [docs/FAQ.md](./docs/FAQ.md)
+- API reference: [docs/API_REFERENCE.md](./docs/API_REFERENCE.md)
+- Cron reference: [docs/CRON_REFERENCE.md](./docs/CRON_REFERENCE.md)
 - Changelog: [CHANGELOG.md](./CHANGELOG.md)
 - Parity matrix: [docs/PARITY_ROADMAP.md](./docs/PARITY_ROADMAP.md)
 - CLI parity table: [docs/CLI_PARITY.md](./docs/CLI_PARITY.md)
