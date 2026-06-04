@@ -1,15 +1,26 @@
 [Unit]
-Description=Legacy compatibility service for NexaClaw
+Description=NexaClaw AI gateway (legacy clawforge alias)
+Documentation=https://github.com/LITVA-HUB/ClawForgeProject
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=%h/nexaclaw
 ExecStart=%h/nexaclaw/build/nexaclaw run --config %h/nexaclaw/config/config.json
+EnvironmentFile=-%h/.config/nexaclaw/env
+
 Restart=on-failure
-RestartSec=2
-Environment=OPENAI_API_KEY=
-Environment=NEXACLAW_GATEWAY_TOKEN=
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nexaclaw
+
+NoNewPrivileges=yes
+PrivateTmp=yes
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

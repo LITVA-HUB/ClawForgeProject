@@ -1,15 +1,33 @@
 [Unit]
-Description=NexaClaw gateway
+Description=NexaClaw AI gateway
+Documentation=https://github.com/LITVA-HUB/ClawForgeProject
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=%h/nexaclaw
 ExecStart=%h/nexaclaw/build/nexaclaw run --config %h/nexaclaw/config/config.json
+
+# Load secrets from a separate env file — never put keys in this unit file.
+# Create /etc/nexaclaw/env (mode 600) with lines like:
+#   OPENAI_API_KEY=sk-...
+#   NEXACLAW_GATEWAY_TOKEN=...
+EnvironmentFile=-%h/.config/nexaclaw/env
+
 Restart=on-failure
-RestartSec=2
-Environment=OPENAI_API_KEY=
-Environment=NEXACLAW_GATEWAY_TOKEN=
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nexaclaw
+
+# Basic hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

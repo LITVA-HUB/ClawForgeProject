@@ -4,6 +4,7 @@
 <dict>
   <key>Label</key>
   <string>com.nexaclaw.agent</string>
+
   <key>ProgramArguments</key>
   <array>
     <string>/Users/you/nexaclaw/build/nexaclaw</string>
@@ -11,14 +12,33 @@
     <string>--config</string>
     <string>/Users/you/nexaclaw/config/config.json</string>
   </array>
+
   <key>WorkingDirectory</key>
   <string>/Users/you/nexaclaw</string>
+
+  <!-- Load API keys and gateway token from a separate env file.
+       Set these in your shell profile or launchctl setenv before loading. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NEXACLAW_GATEWAY_TOKEN</key>
+    <string></string>
+    <key>OPENAI_API_KEY</key>
+    <string></string>
+  </dict>
+
   <key>RunAtLoad</key>
   <true/>
+
   <key>KeepAlive</key>
   <true/>
+
+  <!-- Throttle restarts: wait 5 seconds before restarting on crash -->
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+
   <key>StandardOutPath</key>
   <string>/Users/you/nexaclaw/state/logs/stdout.log</string>
+
   <key>StandardErrorPath</key>
   <string>/Users/you/nexaclaw/state/logs/stderr.log</string>
 </dict>
