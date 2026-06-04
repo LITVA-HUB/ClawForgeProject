@@ -1,8 +1,6 @@
 #include "util/TimeUtil.hpp"
 
 #include <ctime>
-#include <iomanip>
-#include <sstream>
 
 namespace clawforge::util {
 
@@ -15,16 +13,16 @@ std::string TimeUtil::nowIso8601() {
   const auto now = std::chrono::system_clock::now();
   const auto t = std::chrono::system_clock::to_time_t(now);
 
-  std::tm tm{};
+  struct tm buf{};
 #if defined(_WIN32)
-  gmtime_s(&tm, &t);
+  gmtime_s(&buf, &t);
 #else
-  gmtime_r(&t, &tm);
+  gmtime_r(&t, &buf);
 #endif
 
-  std::ostringstream ss;
-  ss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
-  return ss.str();
+  char out[24];
+  std::strftime(out, sizeof(out), "%Y-%m-%dT%H:%M:%SZ", &buf);
+  return out;
 }
 
 int64_t TimeUtil::parseIso8601Utc(const std::string& iso8601) {
