@@ -164,6 +164,11 @@ SessionInfo* SessionStore::findByKeyUnsafe(const std::string& sessionKey) {
   return nullptr;
 }
 
+std::size_t SessionStore::count() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return index_.size();
+}
+
 std::string SessionStore::newSessionId() {
   static thread_local std::mt19937_64 rng(std::random_device{}());
   std::uniform_int_distribution<uint64_t> dist;

@@ -30,6 +30,9 @@ class SessionStore {
   std::vector<SessionMessage> loadMessages(const std::string& sessionKey, std::size_t limit = 50) const;
   std::vector<SessionInfo> listSessions() const;
 
+  // Returns the number of active sessions.
+  std::size_t count() const;
+
  private:
   std::filesystem::path stateDir_;
   std::filesystem::path sessionsDir_;
