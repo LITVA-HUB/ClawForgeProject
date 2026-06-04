@@ -16,3 +16,9 @@ state/models/auth-profiles.json
 .vscode/
 .idea/
 .env
+
+# Local config with secrets — never commit
+config/config.json
+
+# Compile commands for IDEs
+compile_commands.json
